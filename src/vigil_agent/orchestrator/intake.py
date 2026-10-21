@@ -163,6 +163,9 @@ class Intake:
         if claim.was_held:
             return await self._release_held(claim.investigation_id, claim.status)
         if existing is not None:
+            # A redelivered event: an earlier attempt can have stopped before the
+            # placeholder was posted, so make sure that the thread exists.
+            await self.pub.ensure_parent(claim.investigation_id)
             return "already_attached"
         await self.pub.ensure_parent(claim.investigation_id)
         await self.pub.reply(

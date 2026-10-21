@@ -2,7 +2,7 @@
 # A service reaches the agent only when vigil_enabled is true. Intake matches
 # the alert's namespace first, then the PagerDuty service ID.
 defaults:
-  fallback_channel: "#vigil-test"
+  fallback_channel: "#alertmanager"
   # Unmatched incidents go to the "cluster" service below, so nothing is unmapped.
   unmapped_enabled: false
 
@@ -10,7 +10,7 @@ services:
   - name: oci-cost
     vigil_enabled: true
     team: platform
-    slack_channel: "#vigil-test"
+    slack_channel: "#alertmanager"
     repos: [Laobei2012/oci-free-cloud-k8s]
     namespaces: [oci-cost]
     runbook: README.md
@@ -30,7 +30,7 @@ services:
   - name: monitoring
     vigil_enabled: true
     team: platform
-    slack_channel: "#vigil-test"
+    slack_channel: "#alertmanager"
     repos: [Laobei2012/oci-free-cloud-k8s]
     namespaces: [monitoring, loki, grafana]
     runbook: README.md
@@ -38,7 +38,7 @@ services:
   - name: jenkins
     vigil_enabled: true
     team: platform
-    slack_channel: "#vigil-test"
+    slack_channel: "#alertmanager"
     repos: [Laobei2012/oci-free-cloud-k8s]
     namespaces: [jenkins]
     runbook: gitops/tools/jenkins/helm.yaml
@@ -51,7 +51,7 @@ services:
   - name: storage
     vigil_enabled: true
     team: platform
-    slack_channel: "#vigil-test"
+    slack_channel: "#alertmanager"
     repos: [Laobei2012/oci-free-cloud-k8s]
     namespaces: [longhorn, snapshot-controller]
     runbook: README.md
@@ -69,7 +69,7 @@ services:
   - name: platform
     vigil_enabled: true
     team: platform
-    slack_channel: "#vigil-test"
+    slack_channel: "#alertmanager"
     repos: [Laobei2012/oci-free-cloud-k8s]
     namespaces:
       - flux-system
@@ -107,7 +107,7 @@ services:
   - name: cluster
     vigil_enabled: true
     team: platform
-    slack_channel: "#vigil-test"
+    slack_channel: "#alertmanager"
     pd_service_ids: [PO39U1M]
     repos: [Laobei2012/oci-free-cloud-k8s]
     runbook: README.md
@@ -116,5 +116,5 @@ services:
   - name: vigil-agent
     vigil_enabled: false
     team: platform
-    slack_channel: "#vigil-test"
+    slack_channel: "#alertmanager"
     namespaces: [vigil-agent]

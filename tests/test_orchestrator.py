@@ -694,3 +694,20 @@ async def test_namespace_is_preferred_over_the_pagerduty_service(store):
     node = pd_event()
     node.alerts = [Alert(labels={"node": "n1"})]
     assert intake.resolve_service(node).name == "cluster"
+
+
+async def test_redelivery_after_a_stop_before_the_placeholder_posts_it(store):
+    _, intake, _, slack, _, _ = make(store)
+    ev = pd_event()
+    original = intake.pub.ensure_parent
+
+    async def stop(*a, **k):
+        raise asyncio.CancelledError
+
+    intake.pub.ensure_parent = stop
+    with pytest.raises(asyncio.CancelledError):
+        await intake.handle(ev)
+    intake.pub.ensure_parent = original
+    assert slack.posts == []
+    assert await intake.handle(ev) == "already_attached"
+    assert len(slack.posts) == 1 and slack.posts[0]["thread_ts"] is None
