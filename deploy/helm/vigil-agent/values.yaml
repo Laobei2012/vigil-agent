@@ -8,7 +8,8 @@ cluster: oci-phx
 primaryCluster: true
 
 # Secret with optional keys: slack-bot-token, slack-app-token, pd-webhook-secrets,
-# pd-api-key, aws-access-key-id, aws-secret-access-key, github-token.
+# pd-api-key, aws-access-key-id, aws-secret-access-key, anthropic-api-key,
+# anthropic-base-url, github-token.
 # A missing key leaves that feature off.
 existingSecret: vigil-agent
 # Secret with key "token", shared by the orchestrator and the gateway.
@@ -40,6 +41,8 @@ gateway:
 config:
   queue: direct
   modelEnabled: false
+  # bedrock (AWS credentials) or anthropic (keys anthropic-api-key and anthropic-base-url in existingSecret).
+  modelProvider: bedrock
   bedrockRegion: us-west-2
   modelId: us.anthropic.claude-opus-5-5
   modelEffort: high

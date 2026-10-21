@@ -47,6 +47,7 @@ spec:
             {{- end }}
             - {name: VIGIL_GATEWAY_URL, value: "http://{{ $name }}-gateway:8081"}
             - {name: VIGIL_MODEL_ENABLED, value: {{ .Values.config.modelEnabled | quote }}}
+            - {name: VIGIL_MODEL_PROVIDER, value: {{ .Values.config.modelProvider | quote }}}
             - {name: VIGIL_BEDROCK_REGION, value: {{ .Values.config.bedrockRegion | quote }}}
             - {name: VIGIL_MODEL_ID, value: {{ .Values.config.modelId | quote }}}
             - {name: VIGIL_MODEL_EFFORT, value: {{ .Values.config.modelEffort | quote }}}
@@ -70,6 +71,8 @@ spec:
             {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_PD_WEBHOOK_SECRETS" "secret" .Values.existingSecret "key" "pd-webhook-secrets") | nindent 12 }}
             {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_PD_API_KEY" "secret" .Values.existingSecret "key" "pd-api-key") | nindent 12 }}
             {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_AM_WEBHOOK_TOKEN" "secret" .Values.existingSecret "key" "am-webhook-token") | nindent 12 }}
+            {{- include "vigil.optionalSecretEnv" (dict "env" "ANTHROPIC_API_KEY" "secret" .Values.existingSecret "key" "anthropic-api-key") | nindent 12 }}
+            {{- include "vigil.optionalSecretEnv" (dict "env" "ANTHROPIC_BASE_URL" "secret" .Values.existingSecret "key" "anthropic-base-url") | nindent 12 }}
             {{- include "vigil.optionalSecretEnv" (dict "env" "AWS_ACCESS_KEY_ID" "secret" .Values.existingSecret "key" "aws-access-key-id") | nindent 12 }}
             {{- include "vigil.optionalSecretEnv" (dict "env" "AWS_SECRET_ACCESS_KEY" "secret" .Values.existingSecret "key" "aws-secret-access-key") | nindent 12 }}
             {{- range $k, $v := .Values.orchestrator.env }}
