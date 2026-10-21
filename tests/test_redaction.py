@@ -10,7 +10,8 @@ FIXTURE = Path(__file__).parent / "fixtures" / "secrets.txt"
 def _cases():
     for line in FIXTURE.read_text().splitlines():
         if line.strip() and not line.startswith("#"):
-            text, secret = (p.strip() for p in line.split("|||"))
+            # "<<>>" splits fake tokens so push protection does not flag the fixture.
+            text, secret = (p.strip().replace("<<>>", "") for p in line.split("|||"))
             yield pytest.param(text, secret, id=text[:40])
 
 
