@@ -180,3 +180,13 @@ async def test_post_blocks_posts_each_part():
 
     ts = await post_blocks(P(), "#c", "t", [{"type": "divider"}] * 120, "1.0")
     assert posted == [50, 50, 20] and ts == ["1", "2", "3"]
+
+
+async def test_channel_id_is_kept_for_updates():
+    class Web:
+        async def chat_postMessage(self, **kw):  # noqa: N802 - Slack SDK name
+            return {"ts": "1.0", "channel": "C123"}
+
+    client = SlackClient("x", client=Web())
+    await client.post("#alertmanager", "t")
+    assert client.channel_ids == {"#alertmanager": "C123"}

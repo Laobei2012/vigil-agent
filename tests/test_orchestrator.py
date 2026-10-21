@@ -711,3 +711,17 @@ async def test_redelivery_after_a_stop_before_the_placeholder_posts_it(store):
     assert slack.posts == []
     assert await intake.handle(ev) == "already_attached"
     assert len(slack.posts) == 1 and slack.posts[0]["thread_ts"] is None
+
+
+async def test_parent_uses_channel_id_and_a_failed_edit_does_not_fail(store):
+    _, intake, _, slack, runtime, _ = make(store)
+    slack.channel_ids = {"#vigil-test": "C999"}
+
+    async def broken_update(*a, **k):
+        raise RuntimeError("channel_not_found")
+
+    slack.update = broken_update
+    await intake.handle(pd_event())
+    assert (await store.get_investigation(1))["slack_channel"] == "C999"
+    await run_one(runtime, store)
+    assert (await store.get_investigation(1))["status"] == "done"

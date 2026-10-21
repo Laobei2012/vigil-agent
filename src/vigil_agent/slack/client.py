@@ -41,6 +41,8 @@ async def post_blocks(
 class SlackClient:
     def __init__(self, token: str, client: AsyncWebClient | None = None, max_retries: int = 4, sleep=asyncio.sleep):
         self.client = client or AsyncWebClient(token=token)
+        # chat.update needs a channel ID. chat.postMessage returns it for a channel name.
+        self.channel_ids: dict[str, str] = {}
         self.max_retries = max_retries
         self.sleep = sleep
 
@@ -67,6 +69,8 @@ class SlackClient:
             unfurl_links=False,
             unfurl_media=False,
         )
+        if resp.get("channel"):
+            self.channel_ids[channel] = resp["channel"]
         return resp["ts"]
 
     async def update(self, channel, ts, text, blocks=None) -> None:

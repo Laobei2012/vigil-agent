@@ -69,6 +69,8 @@ class Publisher:
         channel = inv["context"].get("channel") or self.s.slack_fallback_channel
         text, blocks = await self._parent(inv)
         ts = await self.slack.post(channel, text, blocks)
+        # Store the channel ID, because chat.update does not accept a channel name.
+        channel = getattr(self.slack, "channel_ids", {}).get(channel, channel)
         await self.store.update_investigation(inv_id, slack_channel=channel, slack_ts=ts)
         return await self.store.get_investigation(inv_id)
 
@@ -82,7 +84,10 @@ class Publisher:
             await self.store.update_investigation(inv_id, context=ctx)
             inv["context"] = ctx
         text, blocks = await self._parent(inv)
-        await self.slack.update(inv["slack_channel"], inv["slack_ts"], text, blocks)
+        try:
+            await self.slack.update(inv["slack_channel"], inv["slack_ts"], text, blocks)
+        except Exception:  # noqa: BLE001 - the parent edit is cosmetic; the thread replies matter
+            log.warning("could not update the parent message of investigation %s", inv_id, exc_info=True)
 
     async def reply(self, inv_id: int, text: str) -> str:
         inv = await self.ensure_parent(inv_id)
