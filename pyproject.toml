@@ -1,0 +1,54 @@
+[project]
+name = "vigil-agent"
+version = "0.1.0"
+description = "Vigil: an on-call agent that triages PagerDuty and Alertmanager alerts with read-only tools and posts to Slack."
+requires-python = ">=3.12"
+dependencies = [
+  "anthropic[bedrock]>=0.70",
+  "boto3>=1.35",
+  "fastapi>=0.115",
+  "httpx>=0.27",
+  "prometheus-client>=0.21",
+  "psycopg[binary,pool]>=3.2",
+  "pydantic>=2.9",
+  "pydantic-settings>=2.6",
+  "pyyaml>=6.0",
+  "slack-sdk>=3.33",
+  "aiohttp>=3.10",
+  "uvicorn>=0.32",
+]
+
+[project.scripts]
+vigil-agent = "vigil_agent.cli:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "respx>=0.21",
+  "ruff>=0.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vigil_agent"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC", "S"]
+ignore = ["S101", "S311"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S105", "S106", "S108"]

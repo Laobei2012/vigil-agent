@@ -1,0 +1,45 @@
+from pathlib import Path
+
+import pytest
+
+from vigil_agent.gateway.redaction import MASK, Redactor
+
+FIXTURE = Path(__file__).parent / "fixtures" / "secrets.txt"
+
+
+def _cases():
+    for line in FIXTURE.read_text().splitlines():
+        if line.strip() and not line.startswith("#"):
+            text, secret = (p.strip() for p in line.split("|||"))
+            yield pytest.param(text, secret, id=text[:40])
+
+
+@pytest.mark.parametrize(("text", "secret"), list(_cases()))
+def test_every_fixture_secret_is_masked(text, secret):
+    out = Redactor().text(text)
+    assert secret not in out
+    assert MASK in out
+
+
+def test_nested_values_are_masked():
+    data = {"a": [{"b": "token=abcdefabcdefabcdef"}], "c": {"d": ("AKIAIOSFODNN7EXAMPLE",)}}
+    out = Redactor().value(data)
+    assert "abcdefabcdefabcdef" not in str(out)
+    assert "AKIAIOSFODNN7EXAMPLE" not in str(out)
+
+
+def test_secret_looking_keys_are_masked_whole():
+    out = Redactor().value({"API_KEY": "short", "replicas": "3"})
+    assert out == {"API_KEY": MASK, "replicas": "3"}
+
+
+def test_ordinary_text_is_unchanged():
+    text = "GET /healthz 200 in 3ms for pod oci-cost-collector-a-29112 on node 10.0.1.36"
+    assert Redactor().text(text) == text
+
+
+def test_pii_is_off_by_default_and_available():
+    text = "user alice@example.com from 10.1.2.3"
+    assert Redactor().text(text) == text
+    out = Redactor(pii=True).text(text)
+    assert "alice@example.com" not in out and "10.1.2.3" not in out

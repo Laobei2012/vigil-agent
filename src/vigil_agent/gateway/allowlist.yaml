@@ -1,0 +1,33 @@
+# The closed tool allowlist. It is part of the gateway image, so adding a tool
+# needs a reviewed pull request and a new signed image. The gateway refuses to
+# register or call any tool that is not in this list. All tools are read-only.
+tools:
+  # Metrics: VictoriaMetrics vmselect in production, Prometheus in the test cluster.
+  - query_instant
+  - query_range
+  - list_alert_rules
+  - series_labels
+  # Logs: Elasticsearch in production, Loki in the test cluster.
+  - search_logs
+  - logs_count
+  - aggregate_terms
+  # Kubernetes.
+  - k8s_get
+  - k8s_list
+  - k8s_describe
+  - k8s_events
+  - k8s_pod_logs
+  - k8s_top
+  # GitHub and the code at the deployed revision.
+  - resolve_deployed_sha
+  - list_changes
+  - get_diff
+  - grep_code
+  - read_file
+  # Jira and Confluence (off in the test cluster).
+  - search_issues
+  - get_issue
+  - confluence_search
+  - get_page
+  # Change timeline.
+  - get_change_timeline
