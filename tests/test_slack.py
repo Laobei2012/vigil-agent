@@ -97,7 +97,7 @@ def test_evidence_only_reply():
         },
         "timeline": {"entries": [{"time": "t", "source": "github_pr", "summary": "bump chart"}]},
         "events": [],
-        "similar": [],
+        "similar": [{"investigation": 3, "at": "2026-10-20 06:00", "verdict": None}],
         "gaps": ["logs: timeout"],
         "runbook": "README.md#jobs",
     }
@@ -124,6 +124,7 @@ def test_evidence_only_reply():
     )
     assert "KubeJobFailed" in text and "bump chart" in text and "logs: timeout" in text
     assert "Job oci-cost/j1 failed to complete." in text and "job_name=j1" in text
+    assert "investigation 3 on 2026-10-20 06:00: evidence only" in text
     assert "last 1, max 1" in text and "2x" in text and "panic: cannot connect to database" in text
     assert "<!channel>" not in text
 

@@ -171,6 +171,14 @@ def feedback_actions(investigation_id: int) -> dict:
     }
 
 
+def _similar(x: dict) -> str:
+    """One line for a past incident: a PagerDuty incident or an earlier investigation."""
+    if x.get("title"):
+        return f"{x['title']} ({x.get('created_at', '')[:10]}, {x.get('resolve_reason') or 'resolved'})"
+    when = str(x.get("at", ""))[:16]
+    return f"investigation {x.get('investigation')} on {when}: {x.get('verdict') or 'evidence only, no verdict'}"
+
+
 def _num(v) -> str:
     try:
         return f"{float(v):.4g}"
@@ -242,8 +250,7 @@ def evidence_only_blocks(
     similar = prefetch.get("similar", [])
     if similar:
         blocks += _section(
-            "*Similar past incidents*\n"
-            + "\n".join(f"• {sanitize(str(x.get('title') or x.get('verdict')), allowed)[:200]}" for x in similar)
+            "*Similar past incidents*\n" + "\n".join(f"• {sanitize(_similar(x), allowed)[:200]}" for x in similar)
         )
     if prefetch.get("runbook"):
         blocks += _section(f"*Runbook:* {sanitize(prefetch['runbook'], allowed)}")
