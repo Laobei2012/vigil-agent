@@ -43,13 +43,16 @@ class GatewaySettings(BaseSettings):
     es_username: str | None = None
     es_password: str | None = None
     es_index_allowlist: str = ""
-    es_field_allowlist: str = "@timestamp,message,log.level,service.name,kubernetes.namespace,kubernetes.pod.name,error.message,http.response.status_code"
+    es_field_allowlist: str = (
+        "@timestamp,message,log.level,service.name,kubernetes.namespace,kubernetes.pod.name,"
+        "error.message,http.response.status_code"
+    )
     kibana_url: str | None = None
     loki_label_allowlist: str = "namespace,pod,container,node,app,job,level,stream"
 
     # Kubernetes. In-cluster ServiceAccount when api_url is empty.
     k8s_api_url: str | None = None
-    k8s_token_path: str = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+    k8s_token_path: str = "/var/run/secrets/kubernetes.io/serviceaccount/token"  # noqa: S105
     k8s_ca_path: str = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
     k8s_namespace_allowlist: str = ""
 
