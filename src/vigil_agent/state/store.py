@@ -21,6 +21,8 @@ from psycopg_pool import AsyncConnectionPool
 
 SCHEDULER_LOCK = 7_361_001
 OPEN_STATUSES = ("queued", "running", "held")
+# reply_ts while the first reply is being posted; the first caller to set it posts.
+PENDING = "pending"
 
 
 @dataclass
@@ -220,6 +222,10 @@ class Store:
                     "started_at = COALESCE(started_at, now()) WHERE id = ANY(%s)",
                     (owner, lease_seconds, ids))
             return ids
+
+    async def claim_first_reply(self, inv_id: int) -> bool:
+        return await self.execute("UPDATE investigations SET reply_ts = %s WHERE id = %s AND reply_ts IS NULL",
+                                  (PENDING, inv_id)) > 0
 
     async def running_count(self) -> int:
         return (await self.fetchone("SELECT count(*) AS n FROM investigations WHERE status = 'running'"))["n"]

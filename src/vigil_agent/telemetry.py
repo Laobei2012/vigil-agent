@@ -5,7 +5,7 @@ from prometheus_client import Counter, Gauge, Histogram
 INVESTIGATION_DURATION = Histogram(
     "vigil_investigation_duration_seconds",
     "Time from intake to the end of a pass.",
-    ["pass_"],
+    ["phase"],
     buckets=(15, 30, 60, 90, 120, 180, 240, 300, 600, 900, 1200),
 )
 TOOL_CALLS = Counter("vigil_tool_calls_total", "Tool calls by tool and status.", ["tool", "status"])

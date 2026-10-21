@@ -1,0 +1,29 @@
+{
+  "event": {
+    "id": "01DEN4HPBQAJTV5X3RSW6NVSQB",
+    "event_type": "incident.triggered",
+    "resource_type": "incident",
+    "occurred_at": "2026-10-20T06:28:07.443Z",
+    "agent": {"html_url": "https://example.pagerduty.com/services/PSVC123", "id": "PSVC123", "self": "https://api.pagerduty.com/services/PSVC123", "summary": "oci-free-cloud-k8s", "type": "service_reference"},
+    "client": null,
+    "data": {
+      "id": "Q2K8TESTINC01",
+      "type": "incident",
+      "self": "https://api.pagerduty.com/incidents/Q2K8TESTINC01",
+      "html_url": "https://example.pagerduty.com/incidents/Q2K8TESTINC01",
+      "number": 42,
+      "status": "triggered",
+      "incident_key": "a1b2c3",
+      "created_at": "2026-10-20T06:28:07Z",
+      "title": "KubeJobFailed: Job oci-cost/oci-cost-collector-a-29112 failed to complete.",
+      "service": {"html_url": "https://example.pagerduty.com/services/PSVC123", "id": "PSVC123", "self": "https://api.pagerduty.com/services/PSVC123", "summary": "oci-free-cloud-k8s", "type": "service_reference"},
+      "assignees": [],
+      "escalation_policy": {"id": "PEP1", "type": "escalation_policy_reference", "summary": "Default"},
+      "teams": [],
+      "priority": null,
+      "urgency": "high",
+      "conference_bridge": null,
+      "resolve_reason": null
+    }
+  }
+}

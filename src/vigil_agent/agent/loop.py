@@ -48,6 +48,7 @@ class Budget:
     used_out: int = 0
     cache_read: int = 0
     cache_write: int = 0
+    charged: float = 0.0
 
     def add(self, usage) -> None:
         self.used_in += usage.input_tokens or 0

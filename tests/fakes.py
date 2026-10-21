@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import itertools
 
 from anthropic.types import Message
@@ -62,4 +63,8 @@ class FakeModel:
         item = self.script.pop(0)
         if isinstance(item, Exception):
             raise item
-        return item(messages) if callable(item) else item
+        if callable(item):
+            item = item(messages)
+            if inspect.isawaitable(item):
+                item = await item
+        return item

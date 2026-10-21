@@ -1,0 +1,19 @@
+{
+  "alerts": [
+    {
+      "id": "PALERT1",
+      "status": "triggered",
+      "body": {
+        "type": "alert_body",
+        "contexts": [],
+        "details": {
+          "firing": "Labels:\n - alertname = KubeJobFailed\n - condition = true\n - job_name = oci-cost-collector-a-29112\n - namespace = oci-cost\n - severity = critical\nAnnotations:\n - description = Job oci-cost/oci-cost-collector-a-29112 failed to complete. Removing failed job after investigation should clear this alert.\n - summary = Job failed to complete.\nSource: https://prometheus/graph\n",
+          "num_firing": "1",
+          "num_resolved": "0",
+          "resolved": ""
+        },
+        "cef_details": {"details": {}}
+      }
+    }
+  ]
+}
