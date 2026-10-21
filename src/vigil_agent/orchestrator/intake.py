@@ -159,7 +159,7 @@ class Intake:
             await self.pub.ensure_parent(claim.investigation_id)
             return "claimed"
         if claim.was_held:
-            return await self._release_held(claim.investigation_id)
+            return await self._release_held(claim.investigation_id, claim.status)
         if existing is not None:
             return "already_attached"
         await self.pub.ensure_parent(claim.investigation_id)
@@ -171,14 +171,22 @@ class Intake:
         await self.pub.refresh_parent(claim.investigation_id)
         return "attached"
 
-    async def _release_held(self, inv_id: int) -> str:
+    async def _release_held(self, inv_id: int, status_before: str | None) -> str:
         """The page arrived for an early-start run: post its held result at once."""
         inv = await self.pub.ensure_parent(inv_id)
-        if inv["fast_report"] and await self.store.claim_first_reply(inv_id):
+        if status_before != "held" or not await self.store.claim_first_reply(inv_id):
+            # Still running: the run posts its own result when it ends.
+            return "early_start_released"
+        prefetch = inv["prefetch"] or {}
+        evidence = prefetch.get("evidence", {})
+        footer = f"early start: prepared while the alert was pending | transcript: investigation {inv_id}"
+        if inv["fast_report"]:
             report = Report.model_validate(inv["fast_report"])
-            evidence = (inv["prefetch"] or {}).get("evidence", {})
-            footer = "early start: prepared while the alert was pending | " + f"transcript: investigation {inv_id}"
             await self.pub.post_report(inv_id, report, evidence, "First pass (early start)", footer)
+        else:
+            reason = "Prepared while the alert was pending, without model analysis."
+            await self.pub.post_evidence_only(inv_id, prefetch, evidence, reason, footer)
+            await self.pub.refresh_parent(inv_id, verdict="evidence only, see the thread")
         return "early_start_released"
 
     async def _status(self, event: IntakeEvent) -> str:

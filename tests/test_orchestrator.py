@@ -636,3 +636,28 @@ async def test_feedback_buttons(store):
     inv = await store.get_investigation(1)
     assert inv["status"] == "queued" and inv["step"] == "fast_done"
     assert len(await store.fetchall("SELECT * FROM feedback")) == 2
+
+
+async def test_early_start_without_model_releases_evidence(store):
+    _, intake, _, slack, runtime, _ = make(
+        store, model=None, early_start_enabled=True, pending_alerts_url="http://prom"
+    )
+    await store.add_spend("investigation", 0)
+    pending = {
+        "data": {
+            "alerts": [
+                {"state": "pending", "activeAt": "t", "labels": {"alertname": "KubeJobFailed", "namespace": "oci-cost"}}
+            ]
+        }
+    }
+    with respx.mock:
+        respx.get("http://prom/api/v1/alerts").mock(return_value=httpx.Response(200, json=pending))
+        assert await runtime.poll_pending_once() == 1
+    await run_one(runtime, store)
+    assert (await store.get_investigation(1))["status"] == "held" and slack.posts == []
+    assert await intake.handle(pd_event()) == "early_start_released"
+    first = slack.thread(slack.posts[0]["ts"])[0]
+    assert "Evidence (no model analysis)" in json.dumps(first["blocks"])
+    await run_one(runtime, store)
+    assert (await store.get_investigation(1))["status"] == "done"
+    assert len(slack.thread(slack.posts[0]["ts"])) == 1
