@@ -1,6 +1,6 @@
 # vigil-agent
 
-Vigil is an on-call agent. It receives PagerDuty and Alertmanager alerts, investigates them with read-only tools, and posts a triage summary with suggested mitigations to one Slack thread per incident. Humans act on the suggestions. The agent never changes production state.
+Vigil is an on-call agent. It receives PagerDuty incidents, investigates them with read-only tools, and posts a triage summary with suggested mitigations to one Slack thread per incident. Humans act on the suggestions. The agent never changes production state.
 
 This repository holds phase 1 of the design: intake, the tool gateway, the two-pass investigation (fast pass and deep pass) with Claude Opus on Amazon Bedrock, Slack output, and the Helm chart.
 
@@ -38,7 +38,7 @@ The orchestrator reads environment variables with the prefix `VIGIL_` (`src/vigi
 
 ## Secrets
 
-You need a secret only for the features that you turn on. PagerDuty is the primary intake: each paged alert reaches the agent through the PagerDuty webhook. Alerts that do not page (warnings) come directly from the Alertmanager webhook and need no secret.
+You need a secret only for the features that you turn on. PagerDuty is the intake: each paged alert reaches the agent through the PagerDuty webhook. Alerts that do not page (warnings) come in phase 2, through the Alertmanager webhook (`/webhooks/alertmanager`).
 
 | Vault secret | Key in Secret `vigil-agent` | Environment variable | Needed for |
 | --- | --- | --- | --- |
@@ -50,7 +50,7 @@ You need a secret only for the features that you turn on. PagerDuty is the prima
 | `VIGIL_PD_WEBHOOK_SECRET` | `pd-webhook-secrets` | `VIGIL_PD_WEBHOOK_SECRETS` | PagerDuty webhook intake |
 | `VIGIL_PD_API_KEY` | `pd-api-key` | `VIGIL_PD_API_KEY` | Alert labels of PagerDuty incidents |
 | `VIGIL_GITHUB_TOKEN` | `github-token` | `VIGIL_GW_GITHUB_TOKEN` | Commits, PRs, and Terraform runs in the timeline |
-| `VIGIL_AM_WEBHOOK_TOKEN` | `am-webhook-token` | `VIGIL_AM_WEBHOOK_TOKEN` | A bearer token on the Alertmanager webhook |
+| `VIGIL_AM_WEBHOOK_TOKEN` | `am-webhook-token` | `VIGIL_AM_WEBHOOK_TOKEN` | A bearer token on the Alertmanager webhook (phase 2) |
 
 The gateway token needs no action. An External Secrets `Password` generator creates it.
 
@@ -68,7 +68,7 @@ Add a secret to the ExternalSecret only after the secret exists in the vault. If
 
 ### PagerDuty
 
-PagerDuty is the primary intake for paged alerts. You need both values.
+PagerDuty is the intake for paged alerts. You need both values.
 
 The webhook tells the agent that an incident exists, but it carries no alert labels. The API key reads those labels (`cluster`, `namespace`, `alertname`) back from PagerDuty. The agent needs them to route the incident and to pick the context pack.
 
@@ -152,9 +152,9 @@ The bot needs no other scope. It posts only to channels that it is a member of.
 
 In production, use a GitHub App with the same read permissions. Its installation tokens expire after one hour.
 
-### Alertmanager webhook token
+### Alertmanager webhook token (phase 2)
 
-This token is optional. The webhook is reachable only inside the cluster.
+Phase 2 sends warnings through this webhook. This token is optional. The webhook is reachable only inside the cluster.
 
 1. Create a value: `openssl rand -hex 32`.
 2. Store it as `VIGIL_AM_WEBHOOK_TOKEN`.
