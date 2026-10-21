@@ -161,7 +161,9 @@ class Publisher:
 
     async def post_evidence_only(self, inv_id: int, prefetch: dict, evidence: dict, reason: str, footer: str) -> str:
         inv = await self.ensure_parent(inv_id)
-        blocks = evidence_only_blocks(prefetch, evidence, allowed=self.allowed, reason=reason, footer=footer)
+        blocks = evidence_only_blocks(
+            prefetch, evidence, allowed=self.allowed, reason=reason, footer=footer, alerts=inv["context"].get("alerts")
+        )
         ts = (await post_blocks(self.slack, inv["slack_channel"], plain_text(blocks, 200), blocks, inv["slack_ts"]))[0]
         telemetry.REPORTS.labels(outcome="evidence_only").inc()
         if inv["reply_ts"] in (None, PENDING):

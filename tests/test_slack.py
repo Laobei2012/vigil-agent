@@ -101,8 +101,30 @@ def test_evidence_only_reply():
         "gaps": ["logs: timeout"],
         "runbook": "README.md#jobs",
     }
-    text = json.dumps(evidence_only_blocks(prefetch, {}, allowed=ALLOWED, reason="model off", footer="f"))
+    prefetch["metrics"] = [
+        {
+            "query": "kube_job_failed",
+            "evidence_id": "E1",
+            "series": [{"metric": {"job_name": "j1"}, "last": [1, "1"], "max": 1.0}],
+        }
+    ]
+    prefetch["logs"] = {
+        "evidence_id": "E2",
+        "hits": 4,
+        "top_patterns": [{"count": 2, "example": "panic: cannot connect to database"}],
+    }
+    alerts = [
+        {
+            "labels": {"alertname": "KubeJobFailed", "namespace": "oci-cost", "job_name": "j1"},
+            "annotations": {"description": "Job oci-cost/j1 failed to complete."},
+        }
+    ]
+    text = json.dumps(
+        evidence_only_blocks(prefetch, {}, allowed=ALLOWED, reason="model off", footer="f", alerts=alerts)
+    )
     assert "KubeJobFailed" in text and "bump chart" in text and "logs: timeout" in text
+    assert "Job oci-cost/j1 failed to complete." in text and "job_name=j1" in text
+    assert "last 1, max 1" in text and "2x" in text and "panic: cannot connect to database" in text
     assert "<!channel>" not in text
 
 

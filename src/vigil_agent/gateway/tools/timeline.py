@@ -160,7 +160,8 @@ class TimelineTools:
         out = []
         for ks in data.get("items", []):
             for c in ks.get("status", {}).get("conditions", []) or []:
-                if c.get("type") == "Ready" and c.get("lastTransitionTime"):
+                # A healthy Kustomization is not a change; a failing one is.
+                if c.get("type") == "Ready" and c.get("status") != "True" and c.get("lastTransitionTime"):
                     out.append(
                         {
                             "time": c["lastTransitionTime"],
@@ -177,6 +178,7 @@ class TimelineTools:
                 "summary": f"{e['type']} {e['reason']} {e['object']}: {e['message'][:200]}",
             }
             for e in events
+            if is_flux_change(e)
         ]
         return out
 
@@ -200,3 +202,22 @@ class TimelineTools:
                 40,
             )
         ]
+
+
+# Flux reports each periodic reconcile as an event. Only events that change or fail something
+# belong in a change timeline.
+_ROUTINE = ("no changes since last reconciliation", "next run in", "artifact up-to-date", "stored artifact")
+
+
+def is_flux_change(event: dict) -> bool:
+    if event.get("type") == "Warning":
+        return True
+    message = (event.get("message") or "").lower()
+    if event.get("reason") in ("Progressing", "UpgradeSucceeded", "InstallSucceeded", "RollbackSucceeded"):
+        return "configured" in message or "created" in message or "deleted" in message or "upgrade" in message
+    return not any(r in message for r in _ROUTINE) and event.get("reason") not in (
+        "ReconciliationSucceeded",
+        "GitOperationSucceeded",
+        "Succeeded",
+        "ArtifactUpToDate",
+    )

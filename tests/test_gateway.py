@@ -383,3 +383,13 @@ async def test_pod_logs_picks_the_default_container():
     out = await KubernetesTools(settings(), httpx.AsyncClient()).k8s_pod_logs("monitoring", "p", tail=10)
     assert logs.calls[0].request.url.params["container"] == "app"
     assert out.data["container"] == "app" and out.data["other_containers"] == ["sidecar"]
+
+
+def test_routine_flux_events_are_not_changes():
+    from vigil_agent.gateway.tools.timeline import is_flux_change
+
+    routine = {"type": "Normal", "reason": "ReconciliationSucceeded", "message": "Reconciliation finished, next run"}
+    git = {"type": "Normal", "reason": "GitOperationSucceeded", "message": "no changes since last reconciliation"}
+    applied = {"type": "Normal", "reason": "Progressing", "message": "Deployment/oci-cost/x configured"}
+    failed = {"type": "Warning", "reason": "HealthCheckFailed", "message": "timeout"}
+    assert [is_flux_change(e) for e in (routine, git, applied, failed)] == [False, False, True, True]

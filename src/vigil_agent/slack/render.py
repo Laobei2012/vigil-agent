@@ -171,19 +171,58 @@ def feedback_actions(investigation_id: int) -> dict:
     }
 
 
+def _num(v) -> str:
+    try:
+        return f"{float(v):.4g}"
+    except (TypeError, ValueError):
+        return "?"
+
+
 def evidence_only_blocks(
-    prefetch: dict, evidence: dict[str, dict], *, allowed: list[str], reason: str, footer: str
+    prefetch: dict,
+    evidence: dict[str, dict],
+    *,
+    allowed: list[str],
+    reason: str,
+    footer: str,
+    alerts: list[dict] | None = None,
 ) -> list[dict]:
     """The degraded-mode reply: the deterministic pre-fetch, without model analysis."""
+    s = lambda t: sanitize(str(t), allowed)  # noqa: E731
     blocks: list[dict] = [{"type": "header", "text": {"type": "plain_text", "text": "Evidence (no model analysis)"}}]
-    blocks += _section(f"_{sanitize(reason, allowed)}_")
+    blocks += _section(f"_{s(reason)}_")
+    lines = []
+    for a in (alerts or [])[:5]:
+        labels = a.get("labels", {})
+        keys = ("namespace", "pod", "container", "job_name", "node", "pvc", "instance")
+        where = ", ".join(f"{k}={labels[k]}" for k in keys if labels.get(k))
+        text = a.get("annotations", {}).get("description") or a.get("annotations", {}).get("summary", "")
+        lines.append(f"• `{labels.get('alertname', '?')}` {where}: {s(text)[:400]}")
+    if lines:
+        blocks += _section("*Alert*\n" + "\n".join(lines))
     rule = prefetch.get("alert_rule") or {}
     if rule:
-        ann = rule.get("annotations", {})
         blocks += _section(
-            f"*Alert rule* `{rule.get('name')}`: `{(rule.get('query') or '')[:500]}`\n"
-            f"{sanitize(ann.get('description', ''), allowed)}"
+            f"*Alert rule* `{rule.get('name')}` (for {rule.get('duration', 0)}s): `{(rule.get('query') or '')[:500]}`"
         )
+    metrics = []
+    for m in prefetch.get("metrics", [])[:4]:
+        series = m.get("series", [])
+        metrics.append(
+            f"• {_cite(m['evidence_id'], evidence.get(m['evidence_id'], {}))} `{m['query'][:150]}`: "
+            f"{len(series)} series"
+        )
+        for x in series[:3]:
+            label = ",".join(f"{k}={v}" for k, v in x.get("metric", {}).items() if k != "__name__")[:120]
+            last = (x.get("last") or [None, None])[1]
+            metrics.append(f"    {label or 'value'}: last {_num(last)}, max {_num(x.get('max'))} (1 h)")
+    if metrics:
+        blocks += _section("*Metrics*\n" + "\n".join(metrics))
+    logs = prefetch.get("logs") or {}
+    if logs.get("top_patterns"):
+        top = "\n".join(f"• {p['count']}x `{s(p['example'])[:240].replace('`', '')}`" for p in logs["top_patterns"][:5])
+        cite = _cite(logs["evidence_id"], evidence.get(logs["evidence_id"], {}))
+        blocks += _section(f"*Top log lines* ({logs.get('hits', 0)} matching lines, {cite})\n{top}")
     changes = prefetch.get("timeline", {}).get("entries", [])[:15]
     if changes:
         blocks += _section(
