@@ -140,10 +140,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--runs", type=int, default=None)
     parser.add_argument("--catalog", default="catalog/services.yaml")
     args = parser.parse_args(argv)
-    from vigil_agent.agent.model import BedrockModel
+    from vigil_agent.agent.model import build_model
 
     settings = Settings()
-    model = BedrockModel(settings.model_id, settings.bedrock_region, settings.model_effort)
+    model = build_model(settings)
     catalog = Catalog.load(args.catalog)
     p = Path(args.path)
     files = sorted(p.glob("*.yaml")) if p.is_dir() else [p]

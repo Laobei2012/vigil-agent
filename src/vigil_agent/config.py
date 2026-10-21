@@ -51,6 +51,8 @@ class Settings(BaseSettings):
 
     # Model. Without model_enabled the agent posts the evidence-only reply (degraded mode).
     model_enabled: bool = False
+    # "bedrock" (production design) or "anthropic" (Anthropic API, ANTHROPIC_API_KEY and ANTHROPIC_BASE_URL).
+    model_provider: str = "bedrock"
     bedrock_region: str = "us-west-2"
     # Pinned on purpose: upgrades are a config change that passes the eval gate first.
     model_id: str = "us.anthropic.claude-opus-5-5"

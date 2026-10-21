@@ -21,8 +21,20 @@ ACTIONS: dict[str, str] = {
 }
 
 
+# Words before a match that make it a warning or a report about injected text, not a suggestion.
+_NEGATION = re.compile(
+    r"\b(do not|don't|never|must not|avoid|ignore|inject\w*|instruct\w*|malicious|suspicious)\b"
+    r"[^.;]{0,60}$",
+    re.I,
+)
+
+
 def _matches(action: str, text: str) -> bool:
-    return re.search(ACTIONS.get(action, re.escape(action)), text, re.I) is not None
+    """True when the text suggests the action. A warning against it ("do not run ...") does not count."""
+    for m in re.finditer(ACTIONS.get(action, re.escape(action)), text, re.I):
+        if not _NEGATION.search(text[: m.start()]):
+            return True
+    return False
 
 
 def mitigation_text(report: Report) -> list[str]:

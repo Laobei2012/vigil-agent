@@ -208,3 +208,36 @@ async def test_bedrock_request_shape():
     assert seen["model"] == "us.anthropic.claude-opus-5-5"
     assert seen["thinking"] == {"type": "adaptive"} and seen["output_config"] == {"effort": "high"}
     assert "tool_choice" not in seen
+
+
+async def test_non_retryable_api_error_degrades_without_retry():
+    from vigil_agent.agent.model import AnthropicModel
+
+    class Messages:
+        calls = 0
+
+        async def create(self, **kw):
+            Messages.calls += 1
+            req = httpx.Request("POST", "https://api")
+            raise anthropic.AuthenticationError("bad key", response=httpx.Response(401, request=req), body=None)
+
+    class Client:
+        messages = Messages()
+
+    try:
+        await AnthropicModel("claude-opus-5-5", client=Client()).create(system=[], tools=[], messages=[], max_tokens=1)
+        raise AssertionError("expected ModelUnavailable")
+    except ModelUnavailable as exc:
+        assert "401" in str(exc)
+    assert Messages.calls == 1
+
+
+def test_build_model_by_provider(monkeypatch):
+    from vigil_agent.agent.model import AnthropicModel, build_model
+    from vigil_agent.config import Settings
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://llm.example")
+    model = build_model(Settings(database_url="x", model_provider="anthropic", model_id="claude-opus-5-5"))
+    assert isinstance(model, AnthropicModel) and str(model.client.base_url).startswith("https://llm.example")
+    assert isinstance(build_model(Settings(database_url="x")), BedrockModel)

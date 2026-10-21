@@ -28,7 +28,7 @@ def _logging() -> None:
 
 
 def build_orchestrator(s: Settings):
-    from vigil_agent.agent.model import BedrockModel
+    from vigil_agent.agent.model import build_model
     from vigil_agent.gateway.app import GatewayClient
     from vigil_agent.intake.receiver import InboxQueue, SqsQueue, create_receiver
     from vigil_agent.orchestrator.intake import Intake
@@ -46,7 +46,7 @@ def build_orchestrator(s: Settings):
     slack = SlackClient(s.slack_bot_token) if (s.slack_bot_token and not s.slack_dry_run) else DryRunSlack(store)
     publisher = Publisher(s, store, slack)
     gateway = GatewayClient(s.gateway_url, s.gateway_token)
-    model = BedrockModel(s.model_id, s.bedrock_region, s.model_effort) if s.model_enabled else None
+    model = build_model(s) if s.model_enabled else None
     intake = Intake(s, store, catalog, flags, pd, publisher)
     investigator = Investigator(s, store, catalog, gateway, model, publisher, pd, s.owner)
     runtime = Runtime(s, store, intake, investigator, publisher)
@@ -67,9 +67,10 @@ def build_orchestrator(s: Settings):
 
             socket = await start_socket_mode(s.slack_app_token, s.slack_bot_token, store)
         log.info(
-            "orchestrator %s started: cluster=%s model=%s slack=%s queue=%s",
+            "orchestrator %s started: cluster=%s provider=%s model=%s slack=%s queue=%s",
             s.owner,
             s.cluster,
+            s.model_provider if model else "none",
             s.model_id if model else "off",
             type(slack).__name__,
             s.queue,

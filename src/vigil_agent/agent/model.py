@@ -1,4 +1,4 @@
-"""Claude on Amazon Bedrock through the Anthropic SDK's Bedrock client (InvokeModel).
+"""Claude through the Anthropic SDK: on Amazon Bedrock (InvokeModel) or through the Anthropic API.
 
 The request body is the Anthropic Messages format, so tool use and prompt
 caching need no translation layer and recorded fixtures share one format.
@@ -30,20 +30,14 @@ class ModelClient(Protocol):
     ) -> Message: ...
 
 
-class BedrockModel:
-    def __init__(
-        self,
-        model_id: str,
-        region: str,
-        effort: str = "high",
-        retries: int = 4,
-        client: anthropic.AsyncAnthropicBedrock | None = None,
-        sleep=asyncio.sleep,
-    ):
+class ClaudeModel:
+    """One Messages API call with retries. The client decides where the call goes."""
+
+    def __init__(self, model_id: str, client, effort: str = "high", retries: int = 4, sleep=asyncio.sleep):
         self.model_id = model_id
+        self.client = client
         self.effort = effort
         self.retries = retries
-        self.client = client or anthropic.AsyncAnthropicBedrock(aws_region=region, max_retries=0, timeout=300)
         self.sleep = sleep
 
     async def create(self, *, system, tools, messages, max_tokens) -> Message:
@@ -67,7 +61,36 @@ class BedrockModel:
                 delay = 2 ** (attempt + 1)
                 log.warning("model call failed (%s), retry in %ss", type(exc).__name__, delay)
                 await self.sleep(delay)
+            except anthropic.APIStatusError as exc:
+                # A bad key, model ID, or request does not get better with a retry.
+                raise ModelUnavailable(f"{type(exc).__name__} {exc.status_code}: {exc.message}"[:500]) from exc
         raise ModelUnavailable("unreachable")
+
+
+class BedrockModel(ClaudeModel):
+    """Claude on Amazon Bedrock (InvokeModel), the production path."""
+
+    def __init__(
+        self, model_id: str, region: str, effort: str = "high", retries: int = 4, client=None, sleep=asyncio.sleep
+    ):
+        client = client or anthropic.AsyncAnthropicBedrock(aws_region=region, max_retries=0, timeout=300)
+        super().__init__(model_id, client, effort, retries, sleep)
+
+
+class AnthropicModel(ClaudeModel):
+    """Claude through the Anthropic API. The client reads ANTHROPIC_API_KEY and ANTHROPIC_BASE_URL."""
+
+    def __init__(self, model_id: str, effort: str = "high", retries: int = 4, client=None, sleep=asyncio.sleep):
+        client = client or anthropic.AsyncAnthropic(max_retries=0, timeout=300)
+        super().__init__(model_id, client, effort, retries, sleep)
+
+
+def build_model(settings) -> ClaudeModel:
+    if settings.model_provider == "anthropic":
+        return AnthropicModel(settings.model_id, settings.model_effort)
+    if settings.model_provider == "bedrock":
+        return BedrockModel(settings.model_id, settings.bedrock_region, settings.model_effort)
+    raise ValueError(f"unknown model provider {settings.model_provider!r}, use bedrock or anthropic")
 
 
 def with_cache_points(system_text: str, tools: list[dict]) -> tuple[list[dict], list[dict]]:
