@@ -364,3 +364,22 @@ async def test_app_requires_token():
         assert ok.status_code == 200 and any(t["name"] == "query_range" for t in ok.json())
         res = await c.post("/v1/tools/rm_rf", json={"args": {}}, headers={"Authorization": "Bearer t0k"})
         assert res.json()["error_code"] == "unknown_tool"
+
+
+@respx.mock
+async def test_pod_logs_picks_the_default_container():
+    respx.get(f"{K8S}/api/v1/namespaces/monitoring/pods/p").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "metadata": {"annotations": {"kubectl.kubernetes.io/default-container": "app"}},
+                "spec": {"containers": [{"name": "sidecar"}, {"name": "app"}]},
+            },
+        )
+    )
+    logs = respx.get(f"{K8S}/api/v1/namespaces/monitoring/pods/p/log").mock(
+        return_value=httpx.Response(200, text="2026-10-21T00:00:00Z started\n")
+    )
+    out = await KubernetesTools(settings(), httpx.AsyncClient()).k8s_pod_logs("monitoring", "p", tail=10)
+    assert logs.calls[0].request.url.params["container"] == "app"
+    assert out.data["container"] == "app" and out.data["other_containers"] == ["sidecar"]

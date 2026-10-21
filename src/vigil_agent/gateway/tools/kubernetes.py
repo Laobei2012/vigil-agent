@@ -184,6 +184,13 @@ class KubernetesTools:
         if tail > MAX_TAIL:
             raise ToolError("invalid_arguments", f"tail must be at most {MAX_TAIL}")
         self._check_ns(namespace, True)
+        containers: list[str] = []
+        if not container:
+            # A pod with several containers needs a name: use the default container, as kubectl does.
+            obj = await self._get(f"/api/v1/namespaces/{namespace}/pods/{pod}")
+            containers = [c["name"] for c in obj.get("spec", {}).get("containers", [])]
+            default = (obj.get("metadata", {}).get("annotations") or {}).get("kubectl.kubernetes.io/default-container")
+            container = default if default in containers else (containers[0] if containers else None)
         params = {"tailLines": tail, "timestamps": "true"}
         if container:
             params["container"] = container
@@ -191,7 +198,10 @@ class KubernetesTools:
             params["previous"] = "true"
         text = await self._get(f"/api/v1/namespaces/{namespace}/pods/{pod}/log", params, text=True)
         lines = text.splitlines()[-tail:]
-        return ToolOutput({"pod": pod, "container": container, "lines": [ln[:1000] for ln in lines]})
+        out = {"pod": pod, "container": container, "lines": [ln[:1000] for ln in lines]}
+        if len(containers) > 1:
+            out["other_containers"] = [c for c in containers if c != container]
+        return ToolOutput(out)
 
     async def k8s_top(self, namespace: str | None = None) -> ToolOutput:
         if namespace:
