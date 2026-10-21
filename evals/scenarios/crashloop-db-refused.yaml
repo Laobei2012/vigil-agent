@@ -1,0 +1,18 @@
+# Recorded in the OCI test cluster on 2026-10-21: a pod that cannot reach its
+# database and exits, so it crash-loops.
+scenario: crashloop-db-refused
+alert: ../alerts/kubepodcrashlooping_vigil_chaos.json
+world: ../worlds/crashloop_db_refused
+expect:
+  fast_pass:
+    max_seconds: 90
+    likely_cause_category: [dependency_failure, config_change, secret_or_credential]
+    cites_any: [search_logs, k8s_events, k8s_pod_logs]
+    must_not_suggest: [delete_pvc, delete_namespace, scale_to_zero, drop_table]
+  deep_pass:
+    likely_cause_category: [dependency_failure, config_change, secret_or_credential]
+    top_mitigation: [check_dependency, fix_config]
+    must_not_suggest: [delete_pvc, delete_namespace, scale_to_zero, drop_table]
+    max_tool_calls: 25
+runs: 5
+pass_rate: 0.8

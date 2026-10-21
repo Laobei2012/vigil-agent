@@ -1,4 +1,4 @@
-"""Entry points: vigil-agent orchestrator | receiver | gateway | migrate."""
+"""Entry points: vigil-agent orchestrator | receiver | gateway | migrate | eval."""
 
 from __future__ import annotations
 
@@ -89,6 +89,12 @@ def build_orchestrator(s: Settings):
 
 
 def main(argv: list[str] | None = None) -> None:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["eval"]:
+        from vigil_agent.evals.runner import main as eval_main
+
+        _logging()
+        sys.exit(eval_main(argv[1:]))
     parser = argparse.ArgumentParser(prog="vigil-agent")
     parser.add_argument("command", choices=["orchestrator", "receiver", "gateway", "migrate"])
     args = parser.parse_args(argv)

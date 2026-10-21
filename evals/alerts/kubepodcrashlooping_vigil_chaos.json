@@ -1,0 +1,25 @@
+{
+ "title": "KubePodCrashLooping: Pod is crash looping.",
+ "alerts": [
+  {
+   "labels": {
+    "job": "kube-state-metrics",
+    "pod": "payments-api",
+    "reason": "CrashLoopBackOff",
+    "cluster": "oci-phx",
+    "severity": "warning",
+    "alertname": "KubePodCrashLooping",
+    "container": "api",
+    "namespace": "vigil-chaos"
+   },
+   "status": "firing",
+   "starts_at": "2026-10-21T07:37:24.482481Z",
+   "annotations": {
+    "summary": "Pod is crash looping.",
+    "description": "Pod vigil-chaos/payments-api (api) is in waiting state (reason: \"CrashLoopBackOff\").",
+    "runbook_url": "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubepodcrashlooping"
+   },
+   "generator_url": "https://monitoring.oci.liwenxin.com/alerting/list"
+  }
+ ]
+}
