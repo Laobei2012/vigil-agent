@@ -77,4 +77,5 @@ jobs:
           cache-to: type=gha,mode=max
       # The tool allowlist is inside this image. The admission policy admits only signed images.
       - uses: sigstore/cosign-installer@v4.1.2
-      - run: cosign sign --yes ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+      # Registry references must be lowercase; the owner name is not.
+      - run: cosign sign --yes "ghcr.io/${GITHUB_REPOSITORY,,}@${{ steps.build.outputs.digest }}"
