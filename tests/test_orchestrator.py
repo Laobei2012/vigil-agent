@@ -661,3 +661,36 @@ async def test_early_start_without_model_releases_evidence(store):
     await run_one(runtime, store)
     assert (await store.get_investigation(1))["status"] == "done"
     assert len(slack.thread(slack.posts[0]["ts"])) == 1
+
+
+async def test_namespace_is_preferred_over_the_pagerduty_service(store):
+    from vigil_agent.catalog import Catalog
+
+    _, intake, _, _, _, _ = make(store)
+    cat = Catalog.from_dict(
+        {
+            "services": [
+                {
+                    "name": "cluster",
+                    "vigil_enabled": True,
+                    "pd_service_ids": ["PSVC123"],
+                    "team": "t",
+                    "slack_channel": "#c",
+                },
+                {
+                    "name": "oci-cost",
+                    "vigil_enabled": True,
+                    "team": "t",
+                    "slack_channel": "#c",
+                    "namespaces": ["oci-cost"],
+                },
+            ]
+        }
+    )
+    intake.catalog_file._value = cat
+    ns = pd_event()
+    ns.alerts = [Alert(labels={"namespace": "oci-cost"})]
+    assert intake.resolve_service(ns).name == "oci-cost"
+    node = pd_event()
+    node.alerts = [Alert(labels={"node": "n1"})]
+    assert intake.resolve_service(node).name == "cluster"

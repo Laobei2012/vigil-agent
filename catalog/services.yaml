@@ -1,18 +1,16 @@
 # Service catalog for the OCI test cluster (oci-phx).
-# A service reaches the agent only when vigil_enabled is true. The PagerDuty
-# service ID of the cluster's PagerDuty service goes in pd_service_ids.
+# A service reaches the agent only when vigil_enabled is true. Intake matches
+# the alert's namespace first, then the PagerDuty service ID.
 defaults:
   fallback_channel: "#vigil-test"
-  # Node and cluster alerts carry no namespace. The test cluster sends them to
-  # the fallback channel; production keeps this false.
-  unmapped_enabled: true
+  # Unmatched incidents go to the "cluster" service below, so nothing is unmapped.
+  unmapped_enabled: false
 
 services:
   - name: oci-cost
     vigil_enabled: true
     team: platform
     slack_channel: "#vigil-test"
-    pd_service_ids: []
     repos: [Laobei2012/oci-free-cloud-k8s]
     namespaces: [oci-cost]
     runbook: README.md
@@ -103,6 +101,16 @@ services:
       - alert_name: EnvoyHigh5xxRate
         metric_queries:
           - sum by (envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{envoy_response_code_class="5"}[5m]))
+
+  # The cluster's PagerDuty service pages for every critical alert. Incidents
+  # whose namespace matches no service above (node, cluster-wide) land here.
+  - name: cluster
+    vigil_enabled: true
+    team: platform
+    slack_channel: "#vigil-test"
+    pd_service_ids: [PO39U1M]
+    repos: [Laobei2012/oci-free-cloud-k8s]
+    runbook: README.md
 
   # The agent never investigates itself; its health alerts post to Slack only.
   - name: vigil-agent

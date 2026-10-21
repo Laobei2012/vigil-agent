@@ -65,7 +65,9 @@ class Intake:
         return self.flags_file.get()
 
     def resolve_service(self, event: IntakeEvent) -> ServiceEntry | None:
-        return self.catalog.get(event.service_id) or self.catalog.by_namespace(event.label("namespace"))
+        # The namespace is more specific than the PagerDuty service: one PagerDuty
+        # service can page for many workloads, as in a cluster with one service.
+        return self.catalog.by_namespace(event.label("namespace")) or self.catalog.get(event.service_id)
 
     async def handle(self, event: IntakeEvent) -> str:
         result = await self._handle(event)
