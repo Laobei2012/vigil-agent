@@ -38,7 +38,7 @@ The orchestrator reads environment variables with the prefix `VIGIL_` (`src/vigi
 
 ## Secrets
 
-You need a secret only for the features that you turn on. The OCI test cluster needs only the model secrets, because Alertmanager sends each alert with its labels to the agent.
+You need a secret only for the features that you turn on. PagerDuty is the primary intake: each paged alert reaches the agent through the PagerDuty webhook. Alerts that do not page (warnings) come directly from the Alertmanager webhook and need no secret.
 
 | Vault secret | Key in Secret `vigil-agent` | Environment variable | Needed for |
 | --- | --- | --- | --- |
@@ -65,6 +65,22 @@ You need `kubectl` access to the cluster and an `oci` CLI profile that can manag
 The script finds the vault from the `oracle-vault` ClusterSecretStore. If the secret exists, the script writes a new version.
 
 Add a secret to the ExternalSecret only after the secret exists in the vault. If one key is missing, the whole ExternalSecret fails, and the other keys stop syncing too.
+
+### PagerDuty
+
+PagerDuty is the primary intake for paged alerts. You need both values.
+
+The webhook tells the agent that an incident exists, but it carries no alert labels. The API key reads those labels (`cluster`, `namespace`, `alertname`) back from PagerDuty. The agent needs them to route the incident and to pick the context pack.
+
+1. In PagerDuty, open Integrations, then Generic Webhooks (v3), then New Webhook.
+2. Set the URL to `https://vigil.<cluster domain>/webhooks/pagerduty`.
+3. Set the scope type to Service, and select the service.
+4. Select the events `incident.triggered`, `incident.acknowledged`, `incident.resolved`, and `incident.reopened`.
+5. Click Add Webhook. Copy the signing secret now, because PagerDuty shows it only one time.
+6. Store the signing secret as `VIGIL_PD_WEBHOOK_SECRET`.
+7. Open Integrations, then API Access Keys, and create a key with Read-only API Key selected.
+8. Store the key as `VIGIL_PD_API_KEY`.
+9. In the HelmRelease values, set `httpRoute.enabled: true`. Add the PagerDuty service ID to `pd_service_ids` in the catalog.
 
 ### Anthropic API
 
@@ -126,22 +142,6 @@ The endpoint receives the redacted evidence of each investigation. Before produc
 8. In the HelmRelease values, set `config.slackDryRun: false` and the channel names in `config` and in the catalog.
 
 The bot needs no other scope. It posts only to channels that it is a member of.
-
-### PagerDuty
-
-If Alertmanager sends every alert to the agent, skip this section. If another alert source pages through PagerDuty, use it.
-
-The webhook tells the agent that an incident exists, but it carries no alert labels. The API key reads those labels (`cluster`, `namespace`, `alertname`) back from PagerDuty. The agent needs them to route the incident and to pick the context pack.
-
-1. In PagerDuty, open Integrations, then Generic Webhooks (v3), then New Webhook.
-2. Set the URL to `https://vigil.<cluster domain>/webhooks/pagerduty`.
-3. Set the scope type to Service, and select the service.
-4. Select the events `incident.triggered`, `incident.acknowledged`, `incident.resolved`, and `incident.reopened`.
-5. Click Add Webhook. Copy the signing secret now, because PagerDuty shows it only one time.
-6. Store the signing secret as `VIGIL_PD_WEBHOOK_SECRET`.
-7. Open Integrations, then API Access Keys, and create a key with Read-only API Key selected.
-8. Store the key as `VIGIL_PD_API_KEY`.
-9. In the HelmRelease values, set `httpRoute.enabled: true`. Add the PagerDuty service ID to `pd_service_ids` in the catalog.
 
 ### GitHub
 
