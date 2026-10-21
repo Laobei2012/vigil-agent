@@ -12,6 +12,10 @@ spec:
     initdb:
       database: vigil_agent
       owner: vigil_agent
+  {{- with .Values.postgres.nodeSelector }}
+  affinity:
+    nodeSelector: {{- toYaml . | nindent 6 }}
+  {{- end }}
   storage:
     size: {{ .Values.postgres.size }}
     storageClass: {{ .Values.postgres.storageClass }}

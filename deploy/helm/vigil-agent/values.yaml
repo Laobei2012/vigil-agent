@@ -108,8 +108,12 @@ postgres:
   cnpg: true
   instances: 1
   imageName: ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie
+  # Pick a storage class whose Longhorn pool has room for every replica. A volume
+  # that cannot schedule its replicas is "faulted", and LonghornVolumeFaulted pages.
   storageClass: longhorn
   size: 2Gi
+  # Keep the database next to its replicas, for example {tenancy: account-b}.
+  nodeSelector: {}
 
 monitoring:
   serviceMonitor: true
