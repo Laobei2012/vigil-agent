@@ -7,8 +7,10 @@ from tests.fakes import FakeModel, msg, report_args, text, thinking, tool_use
 from vigil_agent.agent.loop import Budget, Evidence, LoopLimits, run_loop, wrap_tool_output
 from vigil_agent.agent.model import BedrockModel, ModelUnavailable
 
-SCHEMAS = [{"name": "query_range", "description": "", "input_schema": {"type": "object"}},
-           {"name": "k8s_events", "description": "", "input_schema": {"type": "object"}}]
+SCHEMAS = [
+    {"name": "query_range", "description": "", "input_schema": {"type": "object"}},
+    {"name": "k8s_events", "description": "", "input_schema": {"type": "object"}},
+]
 
 
 async def run(model, *, execute=None, limits=None, should_stop=None, budget=None, mode="fast"):
@@ -23,10 +25,18 @@ async def run(model, *, execute=None, limits=None, should_stop=None, budget=None
         events.append((kind, payload))
 
     result = await run_loop(
-        model=model, system="sys", user="alert", tool_schemas=SCHEMAS, execute=execute or default_execute,
+        model=model,
+        system="sys",
+        user="alert",
+        tool_schemas=SCHEMAS,
+        execute=execute or default_execute,
         limits=limits or LoopLimits(max_tool_calls=25, max_seconds=900, tool_timeout=30),
-        budget=budget or Budget(tokens=1_000_000), evidence=Evidence(), mode=mode, on_event=sink,
-        should_stop=should_stop)
+        budget=budget or Budget(tokens=1_000_000),
+        evidence=Evidence(),
+        mode=mode,
+        on_event=sink,
+        should_stop=should_stop,
+    )
     return result, events, calls
 
 
@@ -40,8 +50,9 @@ async def test_only_gateway_tools_and_submit_report_are_sent():
 
 
 async def test_unknown_tool_gets_rejection_and_loop_continues():
-    model = FakeModel([msg(tool_use("delete_namespace", {"name": "prod"})),
-                       msg(tool_use("submit_report", report_args()))])
+    model = FakeModel(
+        [msg(tool_use("delete_namespace", {"name": "prod"})), msg(tool_use("submit_report", report_args()))]
+    )
     result, _, calls = await run(model)
     assert calls == []
     rejected = model.requests[1]["messages"][-1]["content"][0]
@@ -50,8 +61,9 @@ async def test_unknown_tool_gets_rejection_and_loop_continues():
 
 
 async def test_tool_output_is_wrapped_as_untrusted():
-    model = FakeModel([msg(thinking(), tool_use("query_range", {"q": "up"})),
-                       msg(tool_use("submit_report", report_args()))])
+    model = FakeModel(
+        [msg(thinking(), tool_use("query_range", {"q": "up"})), msg(tool_use("submit_report", report_args()))]
+    )
     await run(model)
     sent = model.requests[1]["messages"]
     assert sent[1]["content"][0]["type"] == "thinking"  # thinking blocks are passed back unchanged
@@ -68,8 +80,9 @@ def test_wrapper_cannot_be_closed_by_tool_data():
 async def test_fast_pass_runs_at_most_three_calls_in_one_turn():
     four = [tool_use("query_range", {"i": i}) for i in range(4)]
     model = FakeModel([msg(*four), msg(tool_use("submit_report", report_args()))])
-    result, _, calls = await run(model, limits=LoopLimits(max_tool_calls=3, max_seconds=60, tool_timeout=30,
-                                                          max_tool_turns=1))
+    result, _, calls = await run(
+        model, limits=LoopLimits(max_tool_calls=3, max_seconds=60, tool_timeout=30, max_tool_turns=1)
+    )
     assert len(calls) == 3 and result.tool_calls == 3
     last = model.requests[1]["messages"][-1]["content"]
     assert last[3]["is_error"] and "budget" in last[3]["content"]
@@ -190,8 +203,8 @@ async def test_bedrock_request_shape():
         messages = Messages()
 
     await BedrockModel("us.anthropic.claude-opus-5-5", "us-west-2", effort="high", client=Client()).create(
-        system=[{"type": "text", "text": "s"}], tools=[], messages=[{"role": "user", "content": "u"}],
-        max_tokens=100)
+        system=[{"type": "text", "text": "s"}], tools=[], messages=[{"role": "user", "content": "u"}], max_tokens=100
+    )
     assert seen["model"] == "us.anthropic.claude-opus-5-5"
     assert seen["thinking"] == {"type": "adaptive"} and seen["output_config"] == {"effort": "high"}
     assert "tool_choice" not in seen

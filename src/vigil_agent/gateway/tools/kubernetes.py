@@ -61,8 +61,7 @@ RESOURCES: dict[str, tuple[str, str, bool]] = {
     "prometheusrules": ("/apis/monitoring.coreos.com/v1", "prometheusrules", True),
 }
 
-DENIED = {"secrets", "pods/exec", "pods/attach", "pods/portforward", "serviceaccounts/token",
-          "secret", "sealedsecrets"}
+DENIED = {"secrets", "pods/exec", "pods/attach", "pods/portforward", "serviceaccounts/token", "secret", "sealedsecrets"}
 MAX_ITEMS = 100
 MAX_TAIL = 500
 
@@ -114,8 +113,13 @@ class KubernetesTools:
         obj = await self._get(self._path(resource, namespace, name))
         return ToolOutput(clean(obj))
 
-    async def k8s_list(self, resource: str, namespace: str | None = None,
-                       label_selector: str | None = None, field_selector: str | None = None) -> ToolOutput:
+    async def k8s_list(
+        self,
+        resource: str,
+        namespace: str | None = None,
+        label_selector: str | None = None,
+        field_selector: str | None = None,
+    ) -> ToolOutput:
         params = {"limit": MAX_ITEMS}
         if label_selector:
             params["labelSelector"] = label_selector
@@ -124,16 +128,20 @@ class KubernetesTools:
         data = await self._get(self._path(resource, namespace), params)
         items = data.get("items", [])
         truncated = bool(data.get("metadata", {}).get("continue"))
-        return ToolOutput({"resource": resource, "count": len(items),
-                           "items": [summarize_object(resource, o) for o in items]}, None, truncated)
+        return ToolOutput(
+            {"resource": resource, "count": len(items), "items": [summarize_object(resource, o) for o in items]},
+            None,
+            truncated,
+        )
 
     async def k8s_describe(self, resource: str, name: str, namespace: str | None = None) -> ToolOutput:
         obj = await self._get(self._path(resource, namespace, name))
         events = await self._events(namespace, name, None, None) if namespace else []
         return ToolOutput({"object": clean(obj), "events": events})
 
-    async def _events(self, namespace: str | None, involved_name: str | None,
-                      event_type: str | None, since: str | None) -> list[dict]:
+    async def _events(
+        self, namespace: str | None, involved_name: str | None, event_type: str | None, since: str | None
+    ) -> list[dict]:
         self._check_ns(namespace, True)
         params = {"limit": 500}
         selectors = []
@@ -151,21 +159,28 @@ class KubernetesTools:
             if cutoff and ts and _parse_k8s(ts) < cutoff:
                 continue
             obj = e.get("involvedObject", {})
-            events.append({
-                "time": ts, "type": e.get("type"), "reason": e.get("reason"),
-                "object": f"{obj.get('kind')}/{obj.get('name')}", "message": (e.get("message") or "")[:500],
-                "count": e.get("count") or 1,
-            })
+            events.append(
+                {
+                    "time": ts,
+                    "type": e.get("type"),
+                    "reason": e.get("reason"),
+                    "object": f"{obj.get('kind')}/{obj.get('name')}",
+                    "message": (e.get("message") or "")[:500],
+                    "count": e.get("count") or 1,
+                }
+            )
         events.sort(key=lambda e: e["time"] or "", reverse=True)
         return events[:MAX_ITEMS]
 
-    async def k8s_events(self, namespace: str, involved_name: str | None = None,
-                         type: str | None = None, since: str | None = "now-1h") -> ToolOutput:
+    async def k8s_events(
+        self, namespace: str, involved_name: str | None = None, type: str | None = None, since: str | None = "now-1h"
+    ) -> ToolOutput:
         events = await self._events(namespace, involved_name, type, since)
         return ToolOutput({"namespace": namespace, "count": len(events), "events": events})
 
-    async def k8s_pod_logs(self, namespace: str, pod: str, container: str | None = None,
-                           tail: int = 200, previous: bool = False) -> ToolOutput:
+    async def k8s_pod_logs(
+        self, namespace: str, pod: str, container: str | None = None, tail: int = 200, previous: bool = False
+    ) -> ToolOutput:
         if tail > MAX_TAIL:
             raise ToolError("invalid_arguments", f"tail must be at most {MAX_TAIL}")
         self._check_ns(namespace, True)
@@ -182,47 +197,107 @@ class KubernetesTools:
         if namespace:
             self._check_ns(namespace, True)
             data = await self._get(f"/apis/metrics.k8s.io/v1beta1/namespaces/{namespace}/pods")
-            rows = [{"pod": i["metadata"]["name"],
-                     "containers": [{"name": c["name"], **c.get("usage", {})} for c in i.get("containers", [])]}
-                    for i in data.get("items", [])]
+            rows = [
+                {
+                    "pod": i["metadata"]["name"],
+                    "containers": [{"name": c["name"], **c.get("usage", {})} for c in i.get("containers", [])],
+                }
+                for i in data.get("items", [])
+            ]
         else:
             data = await self._get("/apis/metrics.k8s.io/v1beta1/nodes")
             rows = [{"node": i["metadata"]["name"], **i.get("usage", {})} for i in data.get("items", [])]
         return ToolOutput({"items": rows[:MAX_ITEMS]}, None, len(rows) > MAX_ITEMS)
 
     def tools(self) -> list[Tool]:
-        res = {"type": "string", "description": "Resource, for example pods, deployments, nodes, "
-               "helmreleases, kustomizations, certificates.cert-manager.io, volumes.longhorn.io, "
-               "clusters.postgresql.cnpg.io, certificatesigningrequests. Secrets are not readable."}
+        res = {
+            "type": "string",
+            "description": "Resource, for example pods, deployments, nodes, "
+            "helmreleases, kustomizations, certificates.cert-manager.io, volumes.longhorn.io, "
+            "clusters.postgresql.cnpg.io, certificatesigningrequests. Secrets are not readable.",
+        }
         ns = {"type": "string"}
         b = "kubernetes"
         return [
-            Tool("k8s_get", "Get one Kubernetes object (managed fields removed, ConfigMap secrets masked).",
-                 {"type": "object", "properties": {"resource": res, "name": {"type": "string"}, "namespace": ns},
-                  "required": ["resource", "name"]}, b, self.k8s_get),
-            Tool("k8s_list", "List Kubernetes objects as summary rows (status, readiness, restarts, images). "
-                 "At most 100 items.",
-                 {"type": "object", "properties": {"resource": res, "namespace": ns,
-                                                   "label_selector": {"type": "string"},
-                                                   "field_selector": {"type": "string"}},
-                  "required": ["resource"]}, b, self.k8s_list),
-            Tool("k8s_describe", "Get one object together with its recent events.",
-                 {"type": "object", "properties": {"resource": res, "name": {"type": "string"}, "namespace": ns},
-                  "required": ["resource", "name"]}, b, self.k8s_describe),
-            Tool("k8s_events", "List events of a namespace, newest first. type is Normal or Warning.",
-                 {"type": "object", "properties": {"namespace": ns, "involved_name": {"type": "string"},
-                                                   "type": {"type": "string", "enum": ["Normal", "Warning"]},
-                                                   "since": {"type": "string", "description": "for example now-2h"}},
-                  "required": ["namespace"]}, b, self.k8s_events),
-            Tool("k8s_pod_logs", "Read the last lines of a container log (tail at most 500). Set previous "
-                 "to read the log of the last terminated container.",
-                 {"type": "object", "properties": {"namespace": ns, "pod": {"type": "string"},
-                                                   "container": {"type": "string"},
-                                                   "tail": {"type": "integer", "minimum": 1, "maximum": MAX_TAIL},
-                                                   "previous": {"type": "boolean"}},
-                  "required": ["namespace", "pod"]}, b, self.k8s_pod_logs),
-            Tool("k8s_top", "CPU and memory use of the pods of a namespace, or of all nodes when namespace "
-                 "is empty.", {"type": "object", "properties": {"namespace": ns}}, b, self.k8s_top),
+            Tool(
+                "k8s_get",
+                "Get one Kubernetes object (managed fields removed, ConfigMap secrets masked).",
+                {
+                    "type": "object",
+                    "properties": {"resource": res, "name": {"type": "string"}, "namespace": ns},
+                    "required": ["resource", "name"],
+                },
+                b,
+                self.k8s_get,
+            ),
+            Tool(
+                "k8s_list",
+                "List Kubernetes objects as summary rows (status, readiness, restarts, images). At most 100 items.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "resource": res,
+                        "namespace": ns,
+                        "label_selector": {"type": "string"},
+                        "field_selector": {"type": "string"},
+                    },
+                    "required": ["resource"],
+                },
+                b,
+                self.k8s_list,
+            ),
+            Tool(
+                "k8s_describe",
+                "Get one object together with its recent events.",
+                {
+                    "type": "object",
+                    "properties": {"resource": res, "name": {"type": "string"}, "namespace": ns},
+                    "required": ["resource", "name"],
+                },
+                b,
+                self.k8s_describe,
+            ),
+            Tool(
+                "k8s_events",
+                "List events of a namespace, newest first. type is Normal or Warning.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "namespace": ns,
+                        "involved_name": {"type": "string"},
+                        "type": {"type": "string", "enum": ["Normal", "Warning"]},
+                        "since": {"type": "string", "description": "for example now-2h"},
+                    },
+                    "required": ["namespace"],
+                },
+                b,
+                self.k8s_events,
+            ),
+            Tool(
+                "k8s_pod_logs",
+                "Read the last lines of a container log (tail at most 500). Set previous "
+                "to read the log of the last terminated container.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "namespace": ns,
+                        "pod": {"type": "string"},
+                        "container": {"type": "string"},
+                        "tail": {"type": "integer", "minimum": 1, "maximum": MAX_TAIL},
+                        "previous": {"type": "boolean"},
+                    },
+                    "required": ["namespace", "pod"],
+                },
+                b,
+                self.k8s_pod_logs,
+            ),
+            Tool(
+                "k8s_top",
+                "CPU and memory use of the pods of a namespace, or of all nodes when namespace is empty.",
+                {"type": "object", "properties": {"namespace": ns}},
+                b,
+                self.k8s_top,
+            ),
         ]
 
 
@@ -235,8 +310,11 @@ def clean(obj: dict) -> dict:
     obj = dict(obj)
     meta = dict(obj.get("metadata", {}))
     meta.pop("managedFields", None)
-    ann = {k: v for k, v in (meta.get("annotations") or {}).items()
-           if k != "kubectl.kubernetes.io/last-applied-configuration"}
+    ann = {
+        k: v
+        for k, v in (meta.get("annotations") or {}).items()
+        if k != "kubectl.kubernetes.io/last-applied-configuration"
+    }
     if ann:
         meta["annotations"] = ann
     else:
@@ -245,8 +323,10 @@ def clean(obj: dict) -> dict:
     if obj.get("kind") == "ConfigMap":
         for field in ("data", "binaryData"):
             if isinstance(obj.get(field), dict):
-                obj[field] = {k: (MASK if SECRET_KEY_PATTERN.search(k) or field == "binaryData" else v)
-                              for k, v in obj[field].items()}
+                obj[field] = {
+                    k: (MASK if SECRET_KEY_PATTERN.search(k) or field == "binaryData" else v)
+                    for k, v in obj[field].items()
+                }
     return obj
 
 
@@ -261,45 +341,79 @@ def _age(ts: str | None) -> str | None:
 
 
 def _conditions(status: dict) -> dict:
-    return {c.get("type"): c.get("status") + (f" ({c.get('reason')})" if c.get("reason") else "")
-            for c in status.get("conditions", []) or [] if c.get("type")}
+    return {
+        c.get("type"): c.get("status") + (f" ({c.get('reason')})" if c.get("reason") else "")
+        for c in status.get("conditions", []) or []
+        if c.get("type")
+    }
 
 
 def summarize_object(resource: str, o: dict) -> dict:
     meta = o.get("metadata", {})
     spec = o.get("spec", {}) or {}
     status = o.get("status", {}) or {}
-    row = {"name": meta.get("name"), "namespace": meta.get("namespace"),
-           "age": _age(meta.get("creationTimestamp"))}
+    row = {"name": meta.get("name"), "namespace": meta.get("namespace"), "age": _age(meta.get("creationTimestamp"))}
     if resource == "pods":
         cs = status.get("containerStatuses", []) or []
-        row.update({
-            "phase": status.get("phase"), "node": spec.get("nodeName"),
-            "ready": f"{sum(1 for c in cs if c.get('ready'))}/{len(cs)}",
-            "restarts": sum(c.get("restartCount", 0) for c in cs),
-            "reasons": [r for c in cs for r in (
-                (c.get("state", {}).get("waiting") or {}).get("reason"),
-                (c.get("lastState", {}).get("terminated") or {}).get("reason")) if r],
-        })
+        row.update(
+            {
+                "phase": status.get("phase"),
+                "node": spec.get("nodeName"),
+                "ready": f"{sum(1 for c in cs if c.get('ready'))}/{len(cs)}",
+                "restarts": sum(c.get("restartCount", 0) for c in cs),
+                "reasons": [
+                    r
+                    for c in cs
+                    for r in (
+                        (c.get("state", {}).get("waiting") or {}).get("reason"),
+                        (c.get("lastState", {}).get("terminated") or {}).get("reason"),
+                    )
+                    if r
+                ],
+            }
+        )
     elif resource in ("deployments", "statefulsets", "replicasets"):
         containers = spec.get("template", {}).get("spec", {}).get("containers", [])
-        row.update({"replicas": spec.get("replicas"), "ready": status.get("readyReplicas", 0),
-                    "updated": status.get("updatedReplicas"), "available": status.get("availableReplicas"),
-                    "images": [c.get("image") for c in containers],
-                    "revision": (meta.get("annotations") or {}).get("deployment.kubernetes.io/revision")})
+        row.update(
+            {
+                "replicas": spec.get("replicas"),
+                "ready": status.get("readyReplicas", 0),
+                "updated": status.get("updatedReplicas"),
+                "available": status.get("availableReplicas"),
+                "images": [c.get("image") for c in containers],
+                "revision": (meta.get("annotations") or {}).get("deployment.kubernetes.io/revision"),
+            }
+        )
     elif resource == "daemonsets":
-        row.update({"desired": status.get("desiredNumberScheduled"), "ready": status.get("numberReady"),
-                    "unavailable": status.get("numberUnavailable")})
+        row.update(
+            {
+                "desired": status.get("desiredNumberScheduled"),
+                "ready": status.get("numberReady"),
+                "unavailable": status.get("numberUnavailable"),
+            }
+        )
     elif resource == "nodes":
         labels = meta.get("labels", {})
-        row.update({"conditions": _conditions(status), "unschedulable": spec.get("unschedulable", False),
-                    "labels": {k: v for k, v in labels.items()
-                               if k.startswith(("topology.", "tenancy", "node.kubernetes.io/instance-type",
-                                                "kubernetes.io/arch"))},
-                    "taints": spec.get("taints")})
+        row.update(
+            {
+                "conditions": _conditions(status),
+                "unschedulable": spec.get("unschedulable", False),
+                "labels": {
+                    k: v
+                    for k, v in labels.items()
+                    if k.startswith(("topology.", "tenancy", "node.kubernetes.io/instance-type", "kubernetes.io/arch"))
+                },
+                "taints": spec.get("taints"),
+            }
+        )
     elif resource == "certificatesigningrequests":
-        row.update({"signer": spec.get("signerName"), "user": spec.get("username"),
-                    "conditions": _conditions(status) or "Pending"})
+        row.update(
+            {
+                "signer": spec.get("signerName"),
+                "user": spec.get("username"),
+                "conditions": _conditions(status) or "Pending",
+            }
+        )
     elif resource == "events":
         row.update({"type": o.get("type"), "reason": o.get("reason"), "message": (o.get("message") or "")[:300]})
     else:

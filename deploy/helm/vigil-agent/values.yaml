@@ -1,0 +1,131 @@
+image:
+  repository: ghcr.io/laobei2012/vigil-agent
+  tag: ""          # defaults to the chart appVersion
+  digest: ""       # set to pin a signed digest
+  pullPolicy: IfNotPresent
+
+cluster: oci-phx
+primaryCluster: true
+
+# Secret with optional keys: slack-bot-token, slack-app-token, pd-webhook-secrets,
+# pd-api-key, aws-access-key-id, aws-secret-access-key, github-token.
+# A missing key leaves that feature off.
+existingSecret: vigil-agent
+# Secret with key "token", shared by the orchestrator and the gateway.
+gatewayTokenSecret: vigil-agent-gateway-token
+# Secret with key "uri" (a PostgreSQL URL). CloudNativePG creates <cluster>-app.
+databaseSecret: vigil-agent-db-app
+
+orchestrator:
+  replicas: 1
+  env: {}
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 512Mi}
+  nodeSelector: {}
+  tolerations: []
+
+gateway:
+  replicas: 1
+  env: {}
+  # Namespaces the Kubernetes tools can read. Empty means all namespaces.
+  namespaceAllowlist: []
+  cacheSize: 2Gi
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 768Mi}
+  nodeSelector: {}
+  tolerations: []
+
+config:
+  queue: direct
+  modelEnabled: false
+  bedrockRegion: us-west-2
+  modelId: us.anthropic.claude-opus-5-5
+  modelEffort: high
+  slackDryRun: true
+  slackFallbackChannel: "#vigil-test"
+  slackHealthChannel: "#vigil-test"
+  grafanaUrl: https://monitoring.oci.liwenxin.com
+  linkAllowlist: oci.liwenxin.com,github.com,pagerduty.com,slack.com
+  earlyStartEnabled: false
+  pendingAlertsUrl: ""
+  dailySpendCapUsd: "50"
+  maxRunningCluster: "5"
+  maxRunningPod: "3"
+
+gatewayConfig:
+  metricsUrl: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+  logsBackend: loki
+  lokiUrl: http://loki.loki.svc:3100
+  grafanaMetricsUid: prometheus
+  grafanaLogsUid: loki
+  codebaseBackend: flux
+  fluxRepo: Laobei2012/oci-free-cloud-k8s
+  githubRepoAllowlist: Laobei2012/oci-free-cloud-k8s
+  githubTerraformWorkflow: terraform.yml
+
+# The kill switch. Edit the ConfigMap to stop new work without a deploy.
+flags:
+  enabled: true
+  disabled_clusters: []
+  disabled_services: []
+
+# The service catalog (see catalog/services.yaml in the repository).
+catalog:
+  defaults:
+    fallback_channel: "#vigil-test"
+    unmapped_enabled: false
+  services: []
+
+# Optional prompt overrides, file name to content. Empty uses the prompts in the image.
+prompts: {}
+
+# Extra resources the Kubernetes tools may read beyond the core set.
+rbac:
+  extraRules:
+    - apiGroups: [kustomize.toolkit.fluxcd.io, helm.toolkit.fluxcd.io, source.toolkit.fluxcd.io]
+      resources: [kustomizations, helmreleases, gitrepositories, helmrepositories]
+    - apiGroups: [gateway.networking.k8s.io]
+      resources: [httproutes, gateways]
+    - apiGroups: [cert-manager.io]
+      resources: [certificates, issuers, clusterissuers]
+    - apiGroups: [acme.cert-manager.io]
+      resources: [challenges, orders]
+    - apiGroups: [external-secrets.io]
+      resources: [externalsecrets, clustersecretstores]
+    - apiGroups: [longhorn.io]
+      resources: [volumes, nodes, replicas]
+    - apiGroups: [postgresql.cnpg.io]
+      resources: [clusters]
+    - apiGroups: [certificates.k8s.io]
+      resources: [certificatesigningrequests]
+    - apiGroups: [monitoring.coreos.com]
+      resources: [prometheusrules]
+
+postgres:
+  # Creates a CloudNativePG Cluster named <release>-db.
+  cnpg: true
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie
+  storageClass: longhorn
+  size: 2Gi
+
+monitoring:
+  serviceMonitor: true
+  serviceMonitorLabels:
+    app.kubernetes.io/component: monitoring
+  prometheusRule: true
+  prometheusRuleLabels:
+    release: kube-prometheus-stack
+
+httpRoute:
+  enabled: false
+  hostname: vigil.oci.liwenxin.com
+  parentRefs:
+    - name: envoy
+      namespace: envoy-gateway
+
+networkPolicy:
+  # The test cluster runs flannel, which does not enforce NetworkPolicy.
+  enabled: false

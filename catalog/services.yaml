@@ -1,0 +1,112 @@
+# Service catalog for the OCI test cluster (oci-phx).
+# A service reaches the agent only when vigil_enabled is true. The PagerDuty
+# service ID of the cluster's PagerDuty service goes in pd_service_ids.
+defaults:
+  fallback_channel: "#vigil-test"
+  # Node and cluster alerts carry no namespace. The test cluster sends them to
+  # the fallback channel; production keeps this false.
+  unmapped_enabled: true
+
+services:
+  - name: oci-cost
+    vigil_enabled: true
+    team: platform
+    slack_channel: "#vigil-test"
+    pd_service_ids: []
+    repos: [Laobei2012/oci-free-cloud-k8s]
+    namespaces: [oci-cost]
+    runbook: README.md
+    dashboards: ["https://monitoring.oci.liwenxin.com/d/oci-cost"]
+    context_packs:
+      - alert_name: KubeJobFailed
+        metric_queries:
+          - kube_job_status_failed{namespace="oci-cost"}
+          - kube_job_status_succeeded{namespace="oci-cost"}
+        log_query: '{namespace="oci-cost"} |~ "(?i)(error|traceback|exception|failed)"'
+        runbook: gitops/monitoring/oci-cost/cronjob.yaml
+      - alert_name: OCICostAboveLimit
+        metric_queries:
+          - cnpg_oci_cost_month_to_date
+        runbook: gitops/monitoring/oci-cost/alerts.yaml
+
+  - name: monitoring
+    vigil_enabled: true
+    team: platform
+    slack_channel: "#vigil-test"
+    repos: [Laobei2012/oci-free-cloud-k8s]
+    namespaces: [monitoring, loki, grafana]
+    runbook: README.md
+
+  - name: jenkins
+    vigil_enabled: true
+    team: platform
+    slack_channel: "#vigil-test"
+    repos: [Laobei2012/oci-free-cloud-k8s]
+    namespaces: [jenkins]
+    runbook: gitops/tools/jenkins/helm.yaml
+    context_packs:
+      - alert_name: JenkinsJobFailed
+        metric_queries:
+          - prometheus_jenkins_builds_last_build_result_ordinal{namespace="jenkins"}
+        log_query: '{namespace="jenkins"} |~ "(?i)(error|failed|exception)"'
+
+  - name: storage
+    vigil_enabled: true
+    team: platform
+    slack_channel: "#vigil-test"
+    repos: [Laobei2012/oci-free-cloud-k8s]
+    namespaces: [longhorn, snapshot-controller]
+    runbook: README.md
+    context_packs:
+      - alert_name: LonghornVolumeFaulted
+        metric_queries:
+          - longhorn_volume_robustness
+          - longhorn_node_status{condition="ready"}
+        log_query: '{namespace="longhorn"} |~ "(?i)(error|fault|degraded)"'
+      - alert_name: LonghornVolumeDegraded
+        metric_queries:
+          - longhorn_volume_robustness
+          - longhorn_node_status{condition="ready"}
+
+  - name: platform
+    vigil_enabled: true
+    team: platform
+    slack_channel: "#vigil-test"
+    repos: [Laobei2012/oci-free-cloud-k8s]
+    namespaces:
+      - flux-system
+      - cert-manager
+      - external-secrets
+      - external-dns
+      - envoy-gateway
+      - dex
+      - teleport
+      - cnpg-system
+      - kubelet-csr-approver
+      - metrics-server
+      - kube-system
+      - default
+    runbook: README.md
+    context_packs:
+      - alert_name: FluxResourceNotReady
+        metric_queries:
+          - gotk_resource_info{ready="False"}
+        log_query: '{namespace="flux-system"} |~ "(?i)(error|failed)"'
+      - alert_name: CertificateNotReady
+        metric_queries:
+          - certmanager_certificate_ready_status{condition="False"}
+        log_query: '{namespace="cert-manager"} |~ "(?i)(error|failed)"'
+      - alert_name: ExternalSecretNotReady
+        metric_queries:
+          - externalsecret_status_condition{condition="Ready",status="False"}
+        log_query: '{namespace="external-secrets"} |~ "(?i)(error|failed)"'
+      - alert_name: EnvoyHigh5xxRate
+        metric_queries:
+          - sum by (envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{envoy_response_code_class="5"}[5m]))
+
+  # The agent never investigates itself; its health alerts post to Slack only.
+  - name: vigil-agent
+    vigil_enabled: false
+    team: platform
+    slack_channel: "#vigil-test"
+    namespaces: [vigil-agent]

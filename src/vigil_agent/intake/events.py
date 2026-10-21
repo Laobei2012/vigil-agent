@@ -120,17 +120,24 @@ def parse_alertmanager(body: dict) -> IntakeEvent:
     incident_id = "am-" + hashlib.sha256(group_key.encode()).hexdigest()[:16]
     status = body.get("status", "firing")
     alerts = [
-        Alert(labels=a.get("labels", {}), annotations=a.get("annotations", {}), status=a.get("status", status),
-              starts_at=a.get("startsAt"), generator_url=a.get("generatorURL"))
+        Alert(
+            labels=a.get("labels", {}),
+            annotations=a.get("annotations", {}),
+            status=a.get("status", status),
+            starts_at=a.get("startsAt"),
+            generator_url=a.get("generatorURL"),
+        )
         for a in body.get("alerts", [])
     ]
-    fingerprint = ",".join(sorted(f"{a.get('fingerprint')}:{a.get('status')}:{a.get('startsAt')}"
-                                  for a in body.get("alerts", [])))
+    fingerprint = ",".join(
+        sorted(f"{a.get('fingerprint')}:{a.get('status')}:{a.get('startsAt')}" for a in body.get("alerts", []))
+    )
     event_id = "am-" + hashlib.sha256(f"{group_key}|{status}|{fingerprint}".encode()).hexdigest()[:24]
     common = body.get("commonLabels", {})
     alertname = common.get("alertname") or (alerts[0].labels.get("alertname") if alerts else "alert")
     summary = body.get("commonAnnotations", {}).get("summary") or (
-        alerts[0].annotations.get("summary") if alerts else "")
+        alerts[0].annotations.get("summary") if alerts else ""
+    )
     severity = common.get("severity", "warning")
     return IntakeEvent(
         source="alertmanager",

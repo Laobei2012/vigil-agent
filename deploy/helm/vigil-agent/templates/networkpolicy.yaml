@@ -1,0 +1,23 @@
+{{- if .Values.networkPolicy.enabled }}
+# Only the orchestrator can call the gateway. Egress limits per host need an egress
+# proxy or a CNI with FQDN policies; see the Network section of the design doc.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "vigil.name" . }}-gateway
+  labels: {{- include "vigil.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: gateway
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: orchestrator
+      ports:
+        - port: 8081
+{{- end }}

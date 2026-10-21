@@ -72,10 +72,7 @@ class Catalog:
                 self._by_pd[pd_id] = svc
             for ns in svc.namespaces:
                 if ns in self._by_ns:
-                    raise CatalogError(
-                        f"service {svc.name}: namespace {ns} already belongs to "
-                        f"{self._by_ns[ns].name}"
-                    )
+                    raise CatalogError(f"service {svc.name}: namespace {ns} already belongs to {self._by_ns[ns].name}")
                 self._by_ns[ns] = svc
 
     @classmethod

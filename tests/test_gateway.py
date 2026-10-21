@@ -22,8 +22,14 @@ K8S = "https://k8s"
 
 
 def settings(**kw) -> GatewaySettings:
-    base = dict(metrics_url=PROM, loki_url=LOKI, k8s_api_url=K8S, k8s_token_path="/nonexistent",
-                k8s_namespace_allowlist="monitoring,oci-cost", grafana_url="https://grafana")
+    base = dict(
+        metrics_url=PROM,
+        loki_url=LOKI,
+        k8s_api_url=K8S,
+        k8s_token_path="/nonexistent",
+        k8s_namespace_allowlist="monitoring,oci-cost",
+        grafana_url="https://grafana",
+    )
     base.update(kw)
     return GatewaySettings(**base)
 
@@ -36,8 +42,15 @@ def echo_registry(**kw) -> tuple[Registry, list]:
         return ToolOutput({"x": x})
 
     reg = Registry(allowlist=frozenset({"query_instant"}), **kw)
-    reg.register(Tool("query_instant", "d", {"type": "object", "properties": {"x": {"type": "string"}},
-                                             "required": ["x"]}, "metrics", fn))
+    reg.register(
+        Tool(
+            "query_instant",
+            "d",
+            {"type": "object", "properties": {"x": {"type": "string"}}, "required": ["x"]},
+            "metrics",
+            fn,
+        )
+    )
     return reg, calls
 
 
@@ -96,8 +109,9 @@ async def test_slow_call_times_out():
         return ToolOutput({})
 
     reg = Registry(allowlist=frozenset({"query_instant"}), default_timeout=0.05)
-    reg.register(Tool("query_instant", "", {"type": "object", "properties": {"x": {"type": "string"}}},
-                      "metrics", slow))
+    reg.register(
+        Tool("query_instant", "", {"type": "object", "properties": {"x": {"type": "string"}}}, "metrics", slow)
+    )
     res = await reg.call("query_instant", {"x": "a"}, None)
     assert res.error_code == "timeout"
 
@@ -107,8 +121,9 @@ async def test_results_are_redacted():
         return ToolOutput({"line": "password=hunter2hunter2"})
 
     reg = Registry(allowlist=frozenset({"query_instant"}))
-    reg.register(Tool("query_instant", "", {"type": "object", "properties": {"x": {"type": "string"}}},
-                      "metrics", leak))
+    reg.register(
+        Tool("query_instant", "", {"type": "object", "properties": {"x": {"type": "string"}}}, "metrics", leak)
+    )
     res = await reg.call("query_instant", {"x": "a"}, None)
     assert "hunter2hunter2" not in json.dumps(res.data)
 
@@ -130,7 +145,8 @@ async def test_query_range_guardrails_and_cap():
         await m.query_range("up", "now-1h", step="5s")
     series = [{"metric": {"i": str(i)}, "values": [[1, "1"], [2, "3"]]} for i in range(80)]
     respx.get(f"{PROM}/api/v1/query_range").mock(
-        return_value=httpx.Response(200, json={"status": "success", "data": {"result": series}}))
+        return_value=httpx.Response(200, json={"status": "success", "data": {"result": series}})
+    )
     out = await m.query_range("rate(x[5m])", "now-1h")
     assert out.truncated and len(out.data["series"]) == 50
     assert out.data["series"][0]["max"] == 3.0
@@ -141,7 +157,8 @@ async def test_query_range_guardrails_and_cap():
 @respx.mock
 async def test_query_timeout_is_passed_to_backend():
     route = respx.get(f"{PROM}/api/v1/query").mock(
-        return_value=httpx.Response(200, json={"status": "success", "data": {"result": []}}))
+        return_value=httpx.Response(200, json={"status": "success", "data": {"result": []}})
+    )
     await MetricsTools(settings(), httpx.AsyncClient()).query_instant("up")
     assert route.calls[0].request.url.params["timeout"] == "20s"
 
@@ -161,9 +178,16 @@ async def test_k8s_refuses_secrets_namespaces_and_long_tails():
 
 @respx.mock
 async def test_k8s_configmap_values_are_masked():
-    respx.get(f"{K8S}/api/v1/namespaces/monitoring/configmaps/c").mock(return_value=httpx.Response(200, json={
-        "kind": "ConfigMap", "metadata": {"name": "c", "managedFields": [{"x": 1}]},
-        "data": {"DB_PASSWORD": "abc", "LOG_LEVEL": "info", "url": "postgres://u:pw1234@h/db"}}))
+    respx.get(f"{K8S}/api/v1/namespaces/monitoring/configmaps/c").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "kind": "ConfigMap",
+                "metadata": {"name": "c", "managedFields": [{"x": 1}]},
+                "data": {"DB_PASSWORD": "abc", "LOG_LEVEL": "info", "url": "postgres://u:pw1234@h/db"},
+            },
+        )
+    )
     k = KubernetesTools(settings(), httpx.AsyncClient())
     reg = Registry(allowlist=load_allowlist())
     for t in k.tools():
@@ -178,12 +202,34 @@ async def test_k8s_configmap_values_are_masked():
 
 @respx.mock
 async def test_k8s_list_summarizes_pods():
-    respx.get(f"{K8S}/api/v1/namespaces/oci-cost/pods").mock(return_value=httpx.Response(200, json={
-        "items": [{"metadata": {"name": "p1", "namespace": "oci-cost", "creationTimestamp": "2026-10-01T00:00:00Z"},
-                   "spec": {"nodeName": "n1"},
-                   "status": {"phase": "Running", "containerStatuses": [
-                       {"ready": False, "restartCount": 4, "state": {"waiting": {"reason": "CrashLoopBackOff"}},
-                        "lastState": {"terminated": {"reason": "OOMKilled"}}}]}}]}))
+    respx.get(f"{K8S}/api/v1/namespaces/oci-cost/pods").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "items": [
+                    {
+                        "metadata": {
+                            "name": "p1",
+                            "namespace": "oci-cost",
+                            "creationTimestamp": "2026-10-01T00:00:00Z",
+                        },
+                        "spec": {"nodeName": "n1"},
+                        "status": {
+                            "phase": "Running",
+                            "containerStatuses": [
+                                {
+                                    "ready": False,
+                                    "restartCount": 4,
+                                    "state": {"waiting": {"reason": "CrashLoopBackOff"}},
+                                    "lastState": {"terminated": {"reason": "OOMKilled"}},
+                                }
+                            ],
+                        },
+                    }
+                ]
+            },
+        )
+    )
     out = await KubernetesTools(settings(), httpx.AsyncClient()).k8s_list("pods", "oci-cost")
     row = out.data["items"][0]
     assert row["restarts"] == 4 and row["ready"] == "0/1"
@@ -200,9 +246,16 @@ def test_log_patterns_group_by_shape():
 @respx.mock
 async def test_loki_search_summarizes():
     values = [[str(1_760_000_000_000_000_000 + i), f"error: connect to db failed attempt {i}"] for i in range(30)]
-    respx.get(f"{LOKI}/loki/api/v1/query_range").mock(return_value=httpx.Response(200, json={
-        "data": {"result": [{"stream": {"namespace": "oci-cost", "pod": "p", "secret_label": "x"},
-                             "values": values}]}}))
+    respx.get(f"{LOKI}/loki/api/v1/query_range").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "result": [{"stream": {"namespace": "oci-cost", "pod": "p", "secret_label": "x"}, "values": values}]
+                }
+            },
+        )
+    )
     out = await LokiLogs(settings(), httpx.AsyncClient()).search_logs('{namespace="oci-cost"} |= "error"')
     assert out.data["hits"] == 30
     assert out.data["top_patterns"][0]["count"] == 30
@@ -230,8 +283,7 @@ def git_repo(tmp_path):
     repo.mkdir()
 
     def git(*a):
-        return subprocess.run(["git", "-C", str(repo), *a], check=True, capture_output=True,
-                              text=True).stdout.strip()
+        return subprocess.run(["git", "-C", str(repo), *a], check=True, capture_output=True, text=True).stdout.strip()
 
     git("init", "-q", "-b", "main")
     git("config", "user.email", "t@example.com")
@@ -247,8 +299,12 @@ def git_repo(tmp_path):
 
 async def test_code_reads_stay_on_the_given_sha(git_repo, tmp_path):
     repo, first = git_repo
-    s = settings(codebase_backend="git", github_repo_allowlist="org/app",
-                 codebase_cache_dir=str(tmp_path / "cache"), git_url_template=f"file://{repo}")
+    s = settings(
+        codebase_backend="git",
+        github_repo_allowlist="org/app",
+        codebase_cache_dir=str(tmp_path / "cache"),
+        git_url_template=f"file://{repo}",
+    )
     code = CodebaseTools(s, httpx.AsyncClient(), None)
     found = await code.grep_code("upstream timeout", first)
     assert found.data["matches"][0]["path"] == "app.py"
@@ -267,10 +323,15 @@ async def test_read_file_caps_lines(git_repo, tmp_path):
     (repo / "big.txt").write_text("\n".join(f"line {i}" for i in range(1000)))
     subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
     subprocess.run(["git", "-C", str(repo), "commit", "-qm", "big"], check=True)
-    sha = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True,
-                         check=True).stdout.strip()
-    s = settings(codebase_backend="git", github_repo_allowlist="org/app",
-                 codebase_cache_dir=str(tmp_path / "cache"), git_url_template=f"file://{repo}")
+    sha = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    s = settings(
+        codebase_backend="git",
+        github_repo_allowlist="org/app",
+        codebase_cache_dir=str(tmp_path / "cache"),
+        git_url_template=f"file://{repo}",
+    )
     out = await CodebaseTools(s, httpx.AsyncClient(), None).read_file("big.txt", sha)
     assert out.data["end_line"] - out.data["start_line"] + 1 == 400
     assert out.truncated
@@ -282,8 +343,14 @@ async def test_read_file_caps_lines(git_repo, tmp_path):
 def test_registry_for_test_cluster_has_expected_tools():
     reg = build_registry(settings())
     names = set(reg.tools)
-    assert {"query_range", "search_logs", "k8s_events", "grep_code", "get_change_timeline",
-            "resolve_deployed_sha"} <= names
+    assert {
+        "query_range",
+        "search_logs",
+        "k8s_events",
+        "grep_code",
+        "get_change_timeline",
+        "resolve_deployed_sha",
+    } <= names
     assert not {"search_issues", "get_page", "list_changes"} & names
 
 

@@ -4,8 +4,9 @@ from vigil_agent.state.store import Store
 
 
 async def claim(store: Store, key="svc|Alert", incident="INC", **kw):
-    return await store.claim(grouping_key=key, service="svc", alert_name="Alert", incident_id=incident,
-                             source="pagerduty", **kw)
+    return await store.claim(
+        grouping_key=key, service="svc", alert_name="Alert", incident_id=incident, source="pagerduty", **kw
+    )
 
 
 async def test_concurrent_claims_create_one_investigation(store):
@@ -75,8 +76,10 @@ async def test_real_incidents_go_before_early_start(store):
 async def test_early_start_and_page_share_one_investigation(store):
     results = await asyncio.gather(*[claim(store, incident=None, early_start=True) for _ in range(2)])
     assert sum(r.created for r in results) == 1
-    await store.execute("UPDATE investigations SET created_at = now() - interval '10 minutes', "
-                        "window_start = now() - interval '10 minutes'")
+    await store.execute(
+        "UPDATE investigations SET created_at = now() - interval '10 minutes', "
+        "window_start = now() - interval '10 minutes'"
+    )
     paged = await claim(store, incident="PD1")
     assert paged.investigation_id == results[0].investigation_id and paged.was_held
     inv = await store.get_investigation(paged.investigation_id)

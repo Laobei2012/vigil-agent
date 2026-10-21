@@ -48,8 +48,12 @@ class SqsQueue:
 
     async def put(self, event: IntakeEvent) -> None:
         await asyncio.to_thread(
-            self.client.send_message, QueueUrl=self.url, MessageBody=event.model_dump_json(),
-            MessageGroupId=event.incident_id, MessageDeduplicationId=event.event_id[:128])
+            self.client.send_message,
+            QueueUrl=self.url,
+            MessageBody=event.model_dump_json(),
+            MessageGroupId=event.incident_id,
+            MessageDeduplicationId=event.event_id[:128],
+        )
 
 
 def create_receiver(settings: Settings, queue: Queue, app: FastAPI | None = None) -> FastAPI:

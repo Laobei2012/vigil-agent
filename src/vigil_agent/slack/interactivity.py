@@ -27,7 +27,9 @@ async def handle_action(store, action: dict, user: str | None) -> str | None:
         # Run the deep pass again; the first reply stays.
         n = await store.execute(
             "UPDATE investigations SET status = 'queued', step = 'fast_done', deep_report = NULL, resolved = false "
-            "WHERE id = %s AND status IN ('done', 'failed')", (inv_id,))
+            "WHERE id = %s AND status IN ('done', 'failed')",
+            (inv_id,),
+        )
         await store.add_feedback(inv_id, "reinvestigate", user)
         return "reinvestigate" if n else "busy"
     return None

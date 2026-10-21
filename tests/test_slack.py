@@ -21,13 +21,21 @@ ALLOWED = ["oci.liwenxin.com", "github.com"]
 
 def report(**kw) -> Report:
     base = dict(
-        mode="fast", verdict="bad deploy", summary="5xx on checkout", impact="checkout down",
-        timeline=["10:00 deploy"], confidence="medium",
-        hypotheses=[Hypothesis(cause="bad image", category="bad_deploy", confidence="high", evidence_ids=["E1"]),
-                    Hypothesis(cause="db", category="dependency_failure", confidence="low", evidence_ids=["E9"])],
-        mitigations=[Mitigation(action="roll back", risk="low", expected_effect="5xx stop",
-                                command="flux suspend hr x")],
-        gaps=["no logs"])
+        mode="fast",
+        verdict="bad deploy",
+        summary="5xx on checkout",
+        impact="checkout down",
+        timeline=["10:00 deploy"],
+        confidence="medium",
+        hypotheses=[
+            Hypothesis(cause="bad image", category="bad_deploy", confidence="high", evidence_ids=["E1"]),
+            Hypothesis(cause="db", category="dependency_failure", confidence="low", evidence_ids=["E9"]),
+        ],
+        mitigations=[
+            Mitigation(action="roll back", risk="low", expected_effect="5xx stop", command="flux suspend hr x")
+        ],
+        gaps=["no logs"],
+    )
     base.update(kw)
     return Report(**base)
 
@@ -39,8 +47,11 @@ def test_mentions_are_removed():
 
 
 def test_links_outside_allowlist_become_plain_text():
-    out = sanitize("see <https://evil.example/x|click> and https://evil.example/y and "
-                   "https://monitoring.oci.liwenxin.com/d and <https://github.com/a|gh>", ALLOWED)
+    out = sanitize(
+        "see <https://evil.example/x|click> and https://evil.example/y and "
+        "https://monitoring.oci.liwenxin.com/d and <https://github.com/a|gh>",
+        ALLOWED,
+    )
     assert "<https://evil.example" not in out and "https://evil.example/y" not in out
     assert "evil.example" in out  # kept as defanged text
     assert "https://monitoring.oci.liwenxin.com/d" in out and "<https://github.com/a|gh>" in out
@@ -48,11 +59,20 @@ def test_links_outside_allowlist_become_plain_text():
 
 def test_report_renders_expected_sections():
     evidence = {"E1": {"url": "https://monitoring.oci.liwenxin.com/explore", "title": "5xx rate"}}
-    blocks = report_blocks(report(), evidence, allowed=ALLOWED, footer="model x", label="First pass",
-                           investigation_id=7)
+    blocks = report_blocks(
+        report(), evidence, allowed=ALLOWED, footer="model x", label="First pass", investigation_id=7
+    )
     text = json.dumps(blocks)
-    for part in ("Summary", "Likely cause", "Suggested mitigations", SUGGESTED, "Evidence", "Gaps", "model x",
-                 "vigil_helpful"):
+    for part in (
+        "Summary",
+        "Likely cause",
+        "Suggested mitigations",
+        SUGGESTED,
+        "Evidence",
+        "Gaps",
+        "model x",
+        "vigil_helpful",
+    ):
         assert part in text
     assert "unsupported: no evidence cited" in text  # E9 was never seen
     assert "<https://monitoring.oci.liwenxin.com/explore|E1>" in text
@@ -69,10 +89,18 @@ def test_long_report_splits_within_slack_limits():
 
 
 def test_evidence_only_reply():
-    prefetch = {"alert_rule": {"name": "KubeJobFailed", "query": "kube_job_failed > 0",
-                               "annotations": {"description": "Job failed <!channel>"}},
-                "timeline": {"entries": [{"time": "t", "source": "github_pr", "summary": "bump chart"}]},
-                "events": [], "similar": [], "gaps": ["logs: timeout"], "runbook": "README.md#jobs"}
+    prefetch = {
+        "alert_rule": {
+            "name": "KubeJobFailed",
+            "query": "kube_job_failed > 0",
+            "annotations": {"description": "Job failed <!channel>"},
+        },
+        "timeline": {"entries": [{"time": "t", "source": "github_pr", "summary": "bump chart"}]},
+        "events": [],
+        "similar": [],
+        "gaps": ["logs: timeout"],
+        "runbook": "README.md#jobs",
+    }
     text = json.dumps(evidence_only_blocks(prefetch, {}, allowed=ALLOWED, reason="model off", footer="f"))
     assert "KubeJobFailed" in text and "bump chart" in text and "logs: timeout" in text
     assert "<!channel>" not in text
@@ -87,9 +115,15 @@ class FakeWeb:
         self.calls += 1
         if self.failures:
             status, headers = self.failures.pop(0)
-            resp = AsyncSlackResponse(client=None, http_verb="POST", api_url="u", req_args={},
-                                      data={"ok": False, "error": "ratelimited"}, headers=headers,
-                                      status_code=status)
+            resp = AsyncSlackResponse(
+                client=None,
+                http_verb="POST",
+                api_url="u",
+                req_args={},
+                data={"ok": False, "error": "ratelimited"},
+                headers=headers,
+                status_code=status,
+            )
             raise SlackApiError("fail", resp)
         return {"ts": "1.0"}
 

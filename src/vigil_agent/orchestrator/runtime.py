@@ -32,8 +32,15 @@ log = logging.getLogger("vigil.runtime")
 
 
 class Runtime:
-    def __init__(self, settings: Settings, store: Store, intake: Intake, investigator: Investigator,
-                 publisher: Publisher, http: httpx.AsyncClient | None = None):
+    def __init__(
+        self,
+        settings: Settings,
+        store: Store,
+        intake: Intake,
+        investigator: Investigator,
+        publisher: Publisher,
+        http: httpx.AsyncClient | None = None,
+    ):
         self.s = settings
         self.store = store
         self.intake = intake
@@ -53,14 +60,22 @@ class Runtime:
                 return False
             event = IntakeEvent.model_validate(item["payload"])
             result = await self.intake.handle(event)
-            if result in ("other_cluster", "service_not_enabled", "unmapped_service", "kill_switch",
-                          "duplicate", "unknown_incident"):
+            if result in (
+                "other_cluster",
+                "service_not_enabled",
+                "unmapped_service",
+                "kill_switch",
+                "duplicate",
+                "unknown_incident",
+            ):
                 item["_outcome"]["status"] = "dropped"
         if item.get("_dead"):
             telemetry.INTAKE_DEAD.inc()
-            await self.pub.health(f":warning: vigil-agent intake gave up on event {item['event_id']} "
-                                  f"(incident {item['incident_id']}) after {self.s.intake_max_attempts} attempts: "
-                                  f"{item.get('_error')}. PagerDuty paging is not affected.")
+            await self.pub.health(
+                f":warning: vigil-agent intake gave up on event {item['event_id']} "
+                f"(incident {item['incident_id']}) after {self.s.intake_max_attempts} attempts: "
+                f"{item.get('_error')}. PagerDuty paging is not affected."
+            )
         return True
 
     async def intake_loop(self) -> None:
@@ -77,8 +92,9 @@ class Runtime:
         it, and after the maximum receive count the redrive policy moves it to the DLQ."""
         while not self._stopping:
             try:
-                resp = await asyncio.to_thread(client.receive_message, QueueUrl=queue_url,
-                                               MaxNumberOfMessages=10, WaitTimeSeconds=20)
+                resp = await asyncio.to_thread(
+                    client.receive_message, QueueUrl=queue_url, MaxNumberOfMessages=10, WaitTimeSeconds=20
+                )
             except Exception:
                 log.exception("SQS receive failed")
                 await asyncio.sleep(5)
@@ -89,8 +105,7 @@ class Runtime:
                 except Exception:
                     log.exception("intake failed; SQS will redeliver message %s", m.get("MessageId"))
                     continue
-                await asyncio.to_thread(client.delete_message, QueueUrl=queue_url,
-                                        ReceiptHandle=m["ReceiptHandle"])
+                await asyncio.to_thread(client.delete_message, QueueUrl=queue_url, ReceiptHandle=m["ReceiptHandle"])
 
     # Scheduler
 
@@ -105,8 +120,9 @@ class Runtime:
         self.tasks = {k: t for k, t in self.tasks.items() if not t.done()}
         telemetry.INVESTIGATIONS_RUNNING.set(len(self.tasks))
         free = self.s.max_running_pod - len(self.tasks)
-        ids = await self.store.schedule(self.s.owner, free, self.s.max_running_cluster, self.s.lease_seconds,
-                                        await self.allow_early())
+        ids = await self.store.schedule(
+            self.s.owner, free, self.s.max_running_cluster, self.s.lease_seconds, await self.allow_early()
+        )
         for inv_id in ids:
             self.tasks[inv_id] = asyncio.create_task(self.run_with_lease(inv_id), name=f"investigation-{inv_id}")
         return ids
@@ -116,8 +132,11 @@ class Runtime:
         while not self._stopping:
             try:
                 if time.monotonic() - last_housekeeping > 60:
-                    out = await self.store.housekeeping(self.s.grouping_window_seconds, self.s.early_start_hold_seconds,
-                                                        self.s.transcript_retention_days)
+                    out = await self.store.housekeeping(
+                        self.s.grouping_window_seconds,
+                        self.s.early_start_hold_seconds,
+                        self.s.transcript_retention_days,
+                    )
                     if any(out.values()):
                         log.info("housekeeping %s", out)
                     last_housekeeping = time.monotonic()
@@ -148,8 +167,11 @@ class Runtime:
             if inv and inv["lease_owner"] == self.s.owner:
                 await self.store.finish(inv_id, self.s.owner, "failed")
                 with contextlib.suppress(Exception):
-                    await self.pub.reply(inv_id, f":warning: Vigil could not finish this investigation "
-                                         f"({type(exc).__name__}). Use the runbook; paging is not affected.")
+                    await self.pub.reply(
+                        inv_id,
+                        f":warning: Vigil could not finish this investigation "
+                        f"({type(exc).__name__}). Use the runbook; paging is not affected.",
+                    )
         finally:
             hb.cancel()
 
@@ -187,12 +209,22 @@ class Runtime:
             if await self.store.flap_count(gk) > self.s.early_start_flap_limit:
                 continue
             event_id = "es-" + hashlib.sha256(f"{key}|{a.get('activeAt')}".encode()).hexdigest()[:24]
-            event = IntakeEvent(source="early_start", event_id=event_id,
-                                event_type="incident.triggered", incident_id=f"es-{gk}",
-                                title=f"{labels.get('alertname')}: {a.get('annotations', {}).get('summary', '')}",
-                                urgency="high" if labels.get("severity") == "critical" else "low",
-                                alerts=[Alert(labels=labels, annotations=a.get("annotations", {}), status="pending",
-                                              starts_at=a.get("activeAt"))])
+            event = IntakeEvent(
+                source="early_start",
+                event_id=event_id,
+                event_type="incident.triggered",
+                incident_id=f"es-{gk}",
+                title=f"{labels.get('alertname')}: {a.get('annotations', {}).get('summary', '')}",
+                urgency="high" if labels.get("severity") == "critical" else "low",
+                alerts=[
+                    Alert(
+                        labels=labels,
+                        annotations=a.get("annotations", {}),
+                        status="pending",
+                        starts_at=a.get("activeAt"),
+                    )
+                ],
+            )
             if await self.intake.handle(event) == "early_start_claimed":
                 claimed += 1
         return claimed

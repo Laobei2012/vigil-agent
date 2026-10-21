@@ -13,12 +13,23 @@ _ids = itertools.count(1)
 def msg(*blocks: dict, stop_reason: str | None = None) -> Message:
     if stop_reason is None:
         stop_reason = "tool_use" if any(b["type"] == "tool_use" for b in blocks) else "end_turn"
-    return Message.model_validate({
-        "id": f"msg_{next(_ids)}", "type": "message", "role": "assistant", "model": "fake",
-        "content": list(blocks), "stop_reason": stop_reason, "stop_sequence": None,
-        "usage": {"input_tokens": 1000, "output_tokens": 200, "cache_read_input_tokens": 0,
-                  "cache_creation_input_tokens": 0},
-    })
+    return Message.model_validate(
+        {
+            "id": f"msg_{next(_ids)}",
+            "type": "message",
+            "role": "assistant",
+            "model": "fake",
+            "content": list(blocks),
+            "stop_reason": stop_reason,
+            "stop_sequence": None,
+            "usage": {
+                "input_tokens": 1000,
+                "output_tokens": 200,
+                "cache_read_input_tokens": 0,
+                "cache_creation_input_tokens": 0,
+            },
+        }
+    )
 
 
 def tool_use(name: str, args: dict) -> dict:
@@ -35,12 +46,16 @@ def thinking() -> dict:
 
 def report_args(mode: str = "fast", **kw) -> dict:
     base = {
-        "mode": mode, "verdict": "Job failed after a chart bump", "summary": "The job fails.",
-        "impact": "No cost data.", "timeline": ["10:00 chart bump"], "confidence": "medium",
-        "hypotheses": [{"cause": "chart bump", "category": "bad_deploy", "confidence": "high",
-                        "evidence_ids": ["E1"]}],
-        "mitigations": [{"action": "revert the PR", "risk": "low", "expected_effect": "job passes",
-                         "command": "git revert abc"}],
+        "mode": mode,
+        "verdict": "Job failed after a chart bump",
+        "summary": "The job fails.",
+        "impact": "No cost data.",
+        "timeline": ["10:00 chart bump"],
+        "confidence": "medium",
+        "hypotheses": [{"cause": "chart bump", "category": "bad_deploy", "confidence": "high", "evidence_ids": ["E1"]}],
+        "mitigations": [
+            {"action": "revert the PR", "risk": "low", "expected_effect": "job passes", "command": "git revert abc"}
+        ],
         "gaps": [],
     }
     base.update(kw)

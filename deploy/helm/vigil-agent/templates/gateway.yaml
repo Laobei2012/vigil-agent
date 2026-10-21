@@ -1,0 +1,91 @@
+{{- $name := include "vigil.name" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-gateway
+  labels: {{- include "vigil.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: {{ .Values.gateway.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: gateway
+  template:
+    metadata:
+      labels: {{- include "vigil.labels" . | nindent 8 }}
+        app.kubernetes.io/component: gateway
+      annotations:
+        checksum/catalog: {{ toYaml .Values.catalog | sha256sum }}
+    spec:
+      # The gateway holds the read-only Kubernetes identity (the k8s-reader of the design)
+      # and the backend credentials. The model process never sees them.
+      serviceAccountName: {{ $name }}-k8s-reader
+      automountServiceAccountToken: true
+      securityContext: {{- include "vigil.podSecurity" . | nindent 8 }}
+      {{- with .Values.gateway.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.gateway.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: gateway
+          image: {{ include "vigil.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: [gateway]
+          ports:
+            - {name: http, containerPort: 8081}
+          env:
+            - {name: VIGIL_GW_CLUSTER, value: {{ .Values.cluster | quote }}}
+            - {name: VIGIL_GW_CATALOG_PATH, value: /etc/vigil/catalog/services.yaml}
+            - {name: VIGIL_GW_METRICS_URL, value: {{ .Values.gatewayConfig.metricsUrl | quote }}}
+            - {name: VIGIL_GW_LOGS_BACKEND, value: {{ .Values.gatewayConfig.logsBackend | quote }}}
+            - {name: VIGIL_GW_LOKI_URL, value: {{ .Values.gatewayConfig.lokiUrl | quote }}}
+            - {name: VIGIL_GW_GRAFANA_URL, value: {{ .Values.config.grafanaUrl | quote }}}
+            - {name: VIGIL_GW_GRAFANA_METRICS_UID, value: {{ .Values.gatewayConfig.grafanaMetricsUid | quote }}}
+            - {name: VIGIL_GW_GRAFANA_LOGS_UID, value: {{ .Values.gatewayConfig.grafanaLogsUid | quote }}}
+            - {name: VIGIL_GW_CODEBASE_BACKEND, value: {{ .Values.gatewayConfig.codebaseBackend | quote }}}
+            - {name: VIGIL_GW_CODEBASE_CACHE_DIR, value: /cache/repos}
+            - {name: VIGIL_GW_FLUX_REPO, value: {{ .Values.gatewayConfig.fluxRepo | quote }}}
+            - {name: VIGIL_GW_GITHUB_REPO_ALLOWLIST, value: {{ .Values.gatewayConfig.githubRepoAllowlist | quote }}}
+            - {name: VIGIL_GW_GITHUB_TERRAFORM_WORKFLOW, value: {{ .Values.gatewayConfig.githubTerraformWorkflow | quote }}}
+            - {name: VIGIL_GW_K8S_NAMESPACE_ALLOWLIST, value: {{ join "," .Values.gateway.namespaceAllowlist | quote }}}
+            {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_GW_TOKEN" "secret" .Values.gatewayTokenSecret "key" "token") | nindent 12 }}
+            {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_GW_GITHUB_TOKEN" "secret" .Values.existingSecret "key" "github-token") | nindent 12 }}
+            {{- range $k, $v := .Values.gateway.env }}
+            - {name: {{ $k }}, value: {{ $v | quote }}}
+            {{- end }}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources: {{- toYaml .Values.gateway.resources | nindent 12 }}
+          securityContext: {{- include "vigil.containerSecurity" . | nindent 12 }}
+          volumeMounts:
+            - {name: catalog, mountPath: /etc/vigil/catalog, readOnly: true}
+            - {name: cache, mountPath: /cache}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: catalog
+          configMap: {name: {{ $name }}-catalog}
+        - name: cache
+          emptyDir: {sizeLimit: {{ .Values.gateway.cacheSize }}}
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-gateway
+  labels: {{- include "vigil.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: gateway
+  ports:
+    - {name: http, port: 8081, targetPort: http}

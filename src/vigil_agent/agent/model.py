@@ -25,13 +25,21 @@ class ModelUnavailable(Exception):
 class ModelClient(Protocol):
     model_id: str
 
-    async def create(self, *, system: list[dict], tools: list[dict], messages: list[dict],
-                     max_tokens: int) -> Message: ...
+    async def create(
+        self, *, system: list[dict], tools: list[dict], messages: list[dict], max_tokens: int
+    ) -> Message: ...
 
 
 class BedrockModel:
-    def __init__(self, model_id: str, region: str, effort: str = "high", retries: int = 4,
-                 client: anthropic.AsyncAnthropicBedrock | None = None, sleep=asyncio.sleep):
+    def __init__(
+        self,
+        model_id: str,
+        region: str,
+        effort: str = "high",
+        retries: int = 4,
+        client: anthropic.AsyncAnthropicBedrock | None = None,
+        sleep=asyncio.sleep,
+    ):
         self.model_id = model_id
         self.effort = effort
         self.retries = retries

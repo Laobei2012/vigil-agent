@@ -40,8 +40,15 @@ def grouping_key(service: str, alert_name: str) -> str:
 
 
 class Intake:
-    def __init__(self, settings: Settings, store: Store, catalog: ReloadingFile, flags: ReloadingFile,
-                 pd: PagerDutyClient, publisher: Publisher):
+    def __init__(
+        self,
+        settings: Settings,
+        store: Store,
+        catalog: ReloadingFile,
+        flags: ReloadingFile,
+        pd: PagerDutyClient,
+        publisher: Publisher,
+    ):
         self.s = settings
         self.store = store
         self.catalog_file = catalog
@@ -83,8 +90,9 @@ class Intake:
                 # Raises after retries: the inbox retries the event, then dead-letters it.
                 event.alerts = await self.pd.incident_alerts(event.incident_id)
             else:
-                gaps.append("PagerDuty API key not configured: alert labels unknown, routed by the "
-                            "primary-cluster rule")
+                gaps.append(
+                    "PagerDuty API key not configured: alert labels unknown, routed by the primary-cluster rule"
+                )
         if any(a.labels.get("vigil_health") == "true" for a in event.alerts):
             return "agent_health_alert"
         keep, why = route(event, self.s.cluster, self.s.primary_cluster)
@@ -103,33 +111,48 @@ class Intake:
         alert_name = event.label("alertname") or event.title.split(":")[0][:100]
         key = grouping_key(service, alert_name)
         context = {
-            "title": event.title, "urgency": event.urgency, "html_url": event.html_url, "source": event.source,
-            "incident_id": event.incident_id, "service_id": event.service_id,
-            "channel": self.catalog.channel_for(entry), "alerts": [a.model_dump() for a in event.alerts],
-            "namespace": event.label("namespace"), "gaps": gaps,
+            "title": event.title,
+            "urgency": event.urgency,
+            "html_url": event.html_url,
+            "source": event.source,
+            "incident_id": event.incident_id,
+            "service_id": event.service_id,
+            "channel": self.catalog.channel_for(entry),
+            "alerts": [a.model_dump() for a in event.alerts],
+            "namespace": event.label("namespace"),
+            "gaps": gaps,
         }
         existing = None if event.source == "early_start" else await self.store.get_incident(event.incident_id)
-        reopened = existing is not None and (event.event_type == "incident.reopened"
-                                             or existing["status"] == "resolved")
+        reopened = existing is not None and (
+            event.event_type == "incident.reopened" or existing["status"] == "resolved"
+        )
         old_inv = None
         if reopened:
             old_inv = await self.store.get_investigation(existing["investigation_id"])
-            await self.store.execute("UPDATE investigations SET grouping_open = false WHERE id = %s",
-                                     (old_inv["id"],))
-            await self.store.execute("UPDATE incidents SET investigation_id = NULL WHERE incident_id = %s",
-                                     (event.incident_id,))
+            await self.store.execute("UPDATE investigations SET grouping_open = false WHERE id = %s", (old_inv["id"],))
+            await self.store.execute(
+                "UPDATE incidents SET investigation_id = NULL WHERE incident_id = %s", (event.incident_id,)
+            )
         claim = await self.store.claim(
-            grouping_key=key, service=service, alert_name=alert_name,
+            grouping_key=key,
+            service=service,
+            alert_name=alert_name,
             incident_id=None if event.source == "early_start" else event.incident_id,
-            source=event.source, title=event.title, html_url=event.html_url,
-            labels=event.alerts[0].labels if event.alerts else {}, context=context,
-            early_start=event.source == "early_start", window_seconds=self.s.grouping_window_seconds)
+            source=event.source,
+            title=event.title,
+            html_url=event.html_url,
+            labels=event.alerts[0].labels if event.alerts else {},
+            context=context,
+            early_start=event.source == "early_start",
+            window_seconds=self.s.grouping_window_seconds,
+        )
         if event.source == "early_start":
             return "early_start_claimed" if claim.created else "early_start_exists"
         if claim.created:
             if reopened and old_inv and old_inv["slack_ts"]:
-                await self.store.update_investigation(claim.investigation_id, slack_channel=old_inv["slack_channel"],
-                                                       slack_ts=old_inv["slack_ts"])
+                await self.store.update_investigation(
+                    claim.investigation_id, slack_channel=old_inv["slack_channel"], slack_ts=old_inv["slack_ts"]
+                )
                 await self.pub.reply(claim.investigation_id, ":repeat: Incident reopened. Investigating again.")
                 await self.pub.refresh_parent(claim.investigation_id)
                 return "reopened"
@@ -140,8 +163,11 @@ class Intake:
         if existing is not None:
             return "already_attached"
         await self.pub.ensure_parent(claim.investigation_id)
-        await self.pub.reply(claim.investigation_id, f":link: {event.title} ({event.incident_id}) is grouped into "
-                             "this investigation: same service and alert within 5 minutes.")
+        await self.pub.reply(
+            claim.investigation_id,
+            f":link: {event.title} ({event.incident_id}) is grouped into "
+            "this investigation: same service and alert within 5 minutes.",
+        )
         await self.pub.refresh_parent(claim.investigation_id)
         return "attached"
 
@@ -151,8 +177,7 @@ class Intake:
         if inv["fast_report"] and await self.store.claim_first_reply(inv_id):
             report = Report.model_validate(inv["fast_report"])
             evidence = (inv["prefetch"] or {}).get("evidence", {})
-            footer = "early start: prepared while the alert was pending | " + \
-                f"transcript: investigation {inv_id}"
+            footer = "early start: prepared while the alert was pending | " + f"transcript: investigation {inv_id}"
             await self.pub.post_report(inv_id, report, evidence, "First pass (early start)", footer)
         return "early_start_released"
 
@@ -167,8 +192,11 @@ class Intake:
         inv_id = incident["investigation_id"]
         inv = await self.store.get_investigation(inv_id)
         icon = ":eyes:" if status == "acknowledged" else ":white_check_mark:"
-        await self.pub.reply(inv_id, f"{icon} {incident['title'] or event.incident_id}: {status} in "
-                             f"{'PagerDuty' if event.source == 'pagerduty' else 'Alertmanager'}.")
+        await self.pub.reply(
+            inv_id,
+            f"{icon} {incident['title'] or event.incident_id}: {status} in "
+            f"{'PagerDuty' if event.source == 'pagerduty' else 'Alertmanager'}.",
+        )
         incidents = await self.store.incidents_for(inv_id)
         if status == "resolved" and all(i["status"] == "resolved" for i in incidents):
             await self.store.update_investigation(inv_id, resolved=True)
@@ -177,7 +205,8 @@ class Intake:
                 await self.pub.reply(inv_id, "Resolved before the investigation started. No report.")
             elif inv["status"] == "done":
                 verdict = (inv["deep_report"] or inv["fast_report"] or {}).get("verdict")
-                await self.pub.reply(inv_id, f":memo: Recap: {verdict or 'no model analysis'}. "
-                                     "The report above can seed the postmortem.")
+                await self.pub.reply(
+                    inv_id, f":memo: Recap: {verdict or 'no model analysis'}. The report above can seed the postmortem."
+                )
         await self.pub.refresh_parent(inv_id)
         return status

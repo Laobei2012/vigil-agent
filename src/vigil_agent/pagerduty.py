@@ -14,8 +14,14 @@ class PagerDutyError(Exception):
 
 
 class PagerDutyClient:
-    def __init__(self, api_key: str | None, base_url: str = "https://api.pagerduty.com",
-                 http: httpx.AsyncClient | None = None, retries: int = 3, backoff: float = 1.0):
+    def __init__(
+        self,
+        api_key: str | None,
+        base_url: str = "https://api.pagerduty.com",
+        http: httpx.AsyncClient | None = None,
+        retries: int = 3,
+        backoff: float = 1.0,
+    ):
         self.api_key = api_key
         self.base = base_url.rstrip("/")
         self.http = http or httpx.AsyncClient(timeout=10)
@@ -52,8 +58,16 @@ class PagerDutyClient:
         return [pd_alert_to_alert(a) for a in data.get("alerts", [])]
 
     async def past_incidents(self, service_id: str, title_hint: str, limit: int = 3) -> list[dict]:
-        data = await self._get("/incidents", {"service_ids[]": service_id, "statuses[]": "resolved",
-                                              "date_range": "all", "limit": 50, "sort_by": "created_at:desc"})
+        data = await self._get(
+            "/incidents",
+            {
+                "service_ids[]": service_id,
+                "statuses[]": "resolved",
+                "date_range": "all",
+                "limit": 50,
+                "sort_by": "created_at:desc",
+            },
+        )
         words = {w for w in title_hint.lower().split() if len(w) > 3}
         scored = []
         for inc in data.get("incidents", []):
@@ -62,6 +76,13 @@ class PagerDutyClient:
             if score:
                 scored.append((score, inc))
         scored.sort(key=lambda x: -x[0])
-        return [{"id": i["id"], "title": i.get("title"), "created_at": i.get("created_at"),
-                 "resolve_reason": i.get("resolve_reason"), "url": i.get("html_url")}
-                for _, i in scored[:limit]]
+        return [
+            {
+                "id": i["id"],
+                "title": i.get("title"),
+                "created_at": i.get("created_at"),
+                "resolve_reason": i.get("resolve_reason"),
+                "url": i.get("html_url"),
+            }
+            for _, i in scored[:limit]
+        ]

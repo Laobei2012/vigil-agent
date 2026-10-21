@@ -1,0 +1,6 @@
+apiVersion: v2
+name: vigil-agent
+description: Vigil, an on-call agent that triages alerts with read-only tools and posts to Slack.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

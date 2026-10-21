@@ -71,22 +71,32 @@ class LokiLogs:
 
     def _link(self, query: str, t0, t1) -> str:
         return explore_url(
-            self.s.grafana_url, self.s.grafana_logs_uid, "loki", query,
-            str(int(t0.timestamp() * 1000)), str(int(t1.timestamp() * 1000)),
+            self.s.grafana_url,
+            self.s.grafana_logs_uid,
+            "loki",
+            query,
+            str(int(t0.timestamp() * 1000)),
+            str(int(t1.timestamp() * 1000)),
         )
 
     def _check_selector(self, query: str) -> None:
         if not query.strip().startswith("{"):
             raise ToolError("invalid_arguments", "a LogQL query must start with a stream selector {...}")
 
-    async def search_logs(self, query: str, start: str = "now-1h", end: str = "now",
-                          size: int = 100, index_pattern: str | None = None) -> ToolOutput:
+    async def search_logs(
+        self, query: str, start: str = "now-1h", end: str = "now", size: int = 100, index_pattern: str | None = None
+    ) -> ToolOutput:
         self._check_selector(query)
         t0, t1 = self._range(start, end)
         data = await self._get(
             "/loki/api/v1/query_range",
-            {"query": query, "start": int(t0.timestamp() * 1e9), "end": int(t1.timestamp() * 1e9),
-             "limit": min(size, MAX_HITS), "direction": "backward"},
+            {
+                "query": query,
+                "start": int(t0.timestamp() * 1e9),
+                "end": int(t1.timestamp() * 1e9),
+                "limit": min(size, MAX_HITS),
+                "direction": "backward",
+            },
         )
         lines = []
         for stream in data.get("result", []):
@@ -97,8 +107,9 @@ class LokiLogs:
         out = summarize(lines)
         return ToolOutput(out, self._link(query, t0, t1), len(lines) >= min(size, MAX_HITS))
 
-    async def logs_count(self, query: str, start: str = "now-1h", end: str = "now",
-                         index_pattern: str | None = None) -> ToolOutput:
+    async def logs_count(
+        self, query: str, start: str = "now-1h", end: str = "now", index_pattern: str | None = None
+    ) -> ToolOutput:
         self._check_selector(query)
         t0, t1 = self._range(start, end)
         rng = f"{max(1, int((t1 - t0).total_seconds()))}s"
@@ -109,8 +120,15 @@ class LokiLogs:
             total += float(r["value"][1])
         return ToolOutput({"count": int(total), "start": iso(t0), "end": iso(t1)}, self._link(query, t0, t1))
 
-    async def aggregate_terms(self, query: str, field: str, start: str = "now-1h", end: str = "now",
-                              size: int = 10, index_pattern: str | None = None) -> ToolOutput:
+    async def aggregate_terms(
+        self,
+        query: str,
+        field: str,
+        start: str = "now-1h",
+        end: str = "now",
+        size: int = 10,
+        index_pattern: str | None = None,
+    ) -> ToolOutput:
         self._check_selector(query)
         if field not in self.s.loki_labels:
             raise ToolError("invalid_arguments", f"field must be one of {self.s.loki_labels}")
@@ -118,19 +136,17 @@ class LokiLogs:
         rng = f"{max(1, int((t1 - t0).total_seconds()))}s"
         expr = f"topk({min(size, 50)}, sum by ({field}) (count_over_time({query} [{rng}])))"
         data = await self._get("/loki/api/v1/query", {"query": expr, "time": int(t1.timestamp() * 1e9)})
-        buckets = [
-            {"key": r["metric"].get(field), "count": int(float(r["value"][1]))}
-            for r in data.get("result", [])
-        ]
+        buckets = [{"key": r["metric"].get(field), "count": int(float(r["value"][1]))} for r in data.get("result", [])]
         buckets.sort(key=lambda b: -b["count"])
         return ToolOutput({"field": field, "buckets": buckets}, self._link(query, t0, t1))
 
     def tools(self) -> list[Tool]:
-        q = {"type": "string", "maxLength": 2000,
-             "description": "LogQL, for example {namespace=\"x\"} |= \"error\""}
-        common = {"start": {"type": "string", "description": TIME_DESC},
-                  "end": {"type": "string", "description": TIME_DESC},
-                  "index_pattern": {"type": "string", "description": "ignored for Loki"}}
+        q = {"type": "string", "maxLength": 2000, "description": 'LogQL, for example {namespace="x"} |= "error"'}
+        common = {
+            "start": {"type": "string", "description": TIME_DESC},
+            "end": {"type": "string", "description": TIME_DESC},
+            "index_pattern": {"type": "string", "description": "ignored for Loki"},
+        }
         return _log_tools(self, q, common, "Loki (LogQL), max range 14 days")
 
 
@@ -168,15 +184,22 @@ class ElasticsearchLogs:
     def _link(self, index: str, query: str, start: str, end: str) -> str | None:
         if not self.s.kibana_url:
             return None
-        return (f"{self.s.kibana_url.rstrip('/')}/app/discover#/?_g=(time:(from:'{iso(parse_time(start))}',"
-                f"to:'{iso(parse_time(end))}'))&_a=(index:'{quote(index)}',query:(language:lucene,"
-                f"query:'{quote(query)}'))")
+        return (
+            f"{self.s.kibana_url.rstrip('/')}/app/discover#/?_g=(time:(from:'{iso(parse_time(start))}',"
+            f"to:'{iso(parse_time(end))}'))&_a=(index:'{quote(index)}',query:(language:lucene,"
+            f"query:'{quote(query)}'))"
+        )
 
-    async def search_logs(self, query: str, start: str = "now-1h", end: str = "now",
-                          size: int = 100, index_pattern: str | None = None) -> ToolOutput:
+    async def search_logs(
+        self, query: str, start: str = "now-1h", end: str = "now", size: int = 100, index_pattern: str | None = None
+    ) -> ToolOutput:
         index = self._index(index_pattern)
-        body = {"query": self._body(query, start, end), "size": min(size, MAX_HITS),
-                "sort": [{"@timestamp": "desc"}], "_source": self.s.es_fields}
+        body = {
+            "query": self._body(query, start, end),
+            "size": min(size, MAX_HITS),
+            "sort": [{"@timestamp": "desc"}],
+            "_source": self.s.es_fields,
+        }
         data = await self._post(f"/{index}/_search", body)
         lines = []
         for hit in data.get("hits", {}).get("hits", []):
@@ -186,29 +209,44 @@ class ElasticsearchLogs:
             lines.append((str(fields.pop("@timestamp", "")), msg, fields))
         return ToolOutput(summarize(lines), self._link(index, query, start, end), len(lines) >= MAX_HITS)
 
-    async def logs_count(self, query: str, start: str = "now-1h", end: str = "now",
-                         index_pattern: str | None = None) -> ToolOutput:
+    async def logs_count(
+        self, query: str, start: str = "now-1h", end: str = "now", index_pattern: str | None = None
+    ) -> ToolOutput:
         index = self._index(index_pattern)
         data = await self._post(f"/{index}/_count", {"query": self._body(query, start, end)})
         return ToolOutput({"count": data.get("count", 0)}, self._link(index, query, start, end))
 
-    async def aggregate_terms(self, query: str, field: str, start: str = "now-1h", end: str = "now",
-                              size: int = 10, index_pattern: str | None = None) -> ToolOutput:
+    async def aggregate_terms(
+        self,
+        query: str,
+        field: str,
+        start: str = "now-1h",
+        end: str = "now",
+        size: int = 10,
+        index_pattern: str | None = None,
+    ) -> ToolOutput:
         index = self._index(index_pattern)
         if field not in self.s.es_fields:
             raise ToolError("invalid_arguments", f"field must be one of {self.s.es_fields}")
-        body = {"query": self._body(query, start, end), "size": 0,
-                "aggs": {"terms": {"terms": {"field": field, "size": min(size, 50)}}}}
+        body = {
+            "query": self._body(query, start, end),
+            "size": 0,
+            "aggs": {"terms": {"terms": {"field": field, "size": min(size, 50)}}},
+        }
         data = await self._post(f"/{index}/_search", body)
-        buckets = [{"key": b["key"], "count": b["doc_count"]}
-                   for b in data.get("aggregations", {}).get("terms", {}).get("buckets", [])]
+        buckets = [
+            {"key": b["key"], "count": b["doc_count"]}
+            for b in data.get("aggregations", {}).get("terms", {}).get("buckets", [])
+        ]
         return ToolOutput({"field": field, "buckets": buckets}, self._link(index, query, start, end))
 
     def tools(self) -> list[Tool]:
         q = {"type": "string", "maxLength": 2000, "description": "Lucene query string"}
-        common = {"start": {"type": "string", "description": TIME_DESC},
-                  "end": {"type": "string", "description": TIME_DESC},
-                  "index_pattern": {"type": "string", "description": "an allowed index pattern"}}
+        common = {
+            "start": {"type": "string", "description": TIME_DESC},
+            "end": {"type": "string", "description": TIME_DESC},
+            "index_pattern": {"type": "string", "description": "an allowed index pattern"},
+        }
         return _log_tools(self, q, common, "Elasticsearch (Lucene), max range 7 days")
 
 
@@ -218,25 +256,36 @@ def _log_tools(impl, q: dict, common: dict, backend_desc: str) -> list[Tool]:
             "search_logs",
             f"Search logs in {backend_desc}. Returns the top message patterns by count, a sample "
             "of at most 20 lines, and an evidence link. size is at most 200.",
-            {"type": "object",
-             "properties": {"query": q, **common, "size": {"type": "integer", "minimum": 1, "maximum": MAX_HITS}},
-             "required": ["query"]},
-            "logs", impl.search_logs,
+            {
+                "type": "object",
+                "properties": {"query": q, **common, "size": {"type": "integer", "minimum": 1, "maximum": MAX_HITS}},
+                "required": ["query"],
+            },
+            "logs",
+            impl.search_logs,
         ),
         Tool(
             "logs_count",
             f"Count log lines that match a query in {backend_desc}.",
             {"type": "object", "properties": {"query": q, **common}, "required": ["query"]},
-            "logs", impl.logs_count,
+            "logs",
+            impl.logs_count,
         ),
         Tool(
             "aggregate_terms",
             f"Count matching log lines grouped by one field or label in {backend_desc}.",
-            {"type": "object",
-             "properties": {"query": q, "field": {"type": "string"}, **common,
-                            "size": {"type": "integer", "minimum": 1, "maximum": 50}},
-             "required": ["query", "field"]},
-            "logs", impl.aggregate_terms,
+            {
+                "type": "object",
+                "properties": {
+                    "query": q,
+                    "field": {"type": "string"},
+                    **common,
+                    "size": {"type": "integer", "minimum": 1, "maximum": 50},
+                },
+                "required": ["query", "field"],
+            },
+            "logs",
+            impl.aggregate_terms,
         ),
     ]
 

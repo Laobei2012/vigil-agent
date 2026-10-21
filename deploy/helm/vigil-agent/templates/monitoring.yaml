@@ -1,0 +1,50 @@
+{{- if .Values.monitoring.serviceMonitor }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "vigil.name" . }}
+  labels: {{- include "vigil.labels" . | nindent 4 }}
+    {{- toYaml .Values.monitoring.serviceMonitorLabels | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+      interval: 60s
+{{- end }}
+{{- if .Values.monitoring.prometheusRule }}
+---
+# The agent's own health. Severity warning and vigil_health="true": these alerts go
+# to Slack and never page, and intake ignores them.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "vigil.name" . }}
+  labels: {{- include "vigil.labels" . | nindent 4 }}
+    {{- toYaml .Values.monitoring.prometheusRuleLabels | nindent 4 }}
+spec:
+  groups:
+    - name: vigil-agent
+      rules:
+        - alert: VigilAgentDown
+          expr: absent(up{namespace="{{ .Release.Namespace }}", pod=~"{{ .Release.Name }}-orchestrator-.*"} == 1)
+          for: 10m
+          labels: {severity: warning, vigil_health: "true"}
+          annotations:
+            summary: The vigil-agent orchestrator is down. Paging is not affected.
+            description: "Run: kubectl -n {{ .Release.Namespace }} get pods"
+        - alert: VigilIntakeDeadLetters
+          expr: increase(vigil_intake_dead_letters_total[30m]) > 0
+          labels: {severity: warning, vigil_health: "true"}
+          annotations:
+            summary: vigil-agent gave up on at least one intake event.
+            description: "Run: kubectl -n {{ .Release.Namespace }} logs deploy/{{ .Release.Name }}-orchestrator | grep 'gave up'"
+        - alert: VigilBedrockThrottled
+          expr: increase(vigil_bedrock_throttles_total[15m]) > 5
+          labels: {severity: warning, vigil_health: "true"}
+          annotations:
+            summary: Bedrock throttles vigil-agent. Reports fall back to evidence only.
+            description: Request a higher Bedrock quota or lower the alert volume.
+{{- end }}

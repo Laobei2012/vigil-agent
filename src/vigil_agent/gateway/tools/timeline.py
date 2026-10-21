@@ -22,8 +22,7 @@ MAX_WINDOW_DAYS = 7
 
 
 class TimelineTools:
-    def __init__(self, settings: GatewaySettings, k8s: KubernetesTools, github: GitHubTools,
-                 catalog: Catalog | None):
+    def __init__(self, settings: GatewaySettings, k8s: KubernetesTools, github: GitHubTools, catalog: Catalog | None):
         self.s = settings
         self.k8s = k8s
         self.github = github
@@ -37,8 +36,9 @@ class TimelineTools:
             raise ToolError("invalid_arguments", "unknown service; pass a namespace")
         return namespaces, [r for r in repos if r in self.s.repos or not self.s.repos]
 
-    async def get_change_timeline(self, service: str | None = None, since: str = "now-2h",
-                                  namespace: str | None = None) -> ToolOutput:
+    async def get_change_timeline(
+        self, service: str | None = None, since: str = "now-2h", namespace: str | None = None
+    ) -> ToolOutput:
         t0 = parse_time(since)
         now = utcnow()
         if (now - t0).total_seconds() > MAX_WINDOW_DAYS * 86400:
@@ -63,9 +63,18 @@ class TimelineTools:
                 entries.extend(res)
         entries = [e for e in entries if e.get("time") and parse_time(e["time"]) >= t0]
         entries.sort(key=lambda e: e["time"], reverse=True)
-        return ToolOutput({"since": since, "namespaces": namespaces, "repos": repos,
-                           "entries": entries[:MAX_ENTRIES], "count": len(entries), "gaps": gaps},
-                          None, len(entries) > MAX_ENTRIES)
+        return ToolOutput(
+            {
+                "since": since,
+                "namespaces": namespaces,
+                "repos": repos,
+                "entries": entries[:MAX_ENTRIES],
+                "count": len(entries),
+                "gaps": gaps,
+            },
+            None,
+            len(entries) > MAX_ENTRIES,
+        )
 
     async def _rollouts(self, ns: str, t0) -> list[dict]:
         data = await self.k8s._get(f"/apis/apps/v1/namespaces/{ns}/replicasets", {"limit": 200})
@@ -75,21 +84,47 @@ class TimelineTools:
             ts = meta.get("creationTimestamp")
             if not ts or parse_time(ts) < t0:
                 continue
-            owner = next((o["name"] for o in meta.get("ownerReferences", []) if o.get("kind") == "Deployment"),
-                         meta["name"])
+            owner = next(
+                (o["name"] for o in meta.get("ownerReferences", []) if o.get("kind") == "Deployment"), meta["name"]
+            )
             images = [c.get("image") for c in rs["spec"]["template"]["spec"].get("containers", [])]
             rev = (meta.get("annotations") or {}).get("deployment.kubernetes.io/revision")
-            out.append({"time": ts, "source": "k8s_rollout", "namespace": ns,
-                        "summary": f"Deployment {owner} revision {rev}: {', '.join(images)}"})
+            out.append(
+                {
+                    "time": ts,
+                    "source": "k8s_rollout",
+                    "namespace": ns,
+                    "summary": f"Deployment {owner} revision {rev}: {', '.join(images)}",
+                }
+            )
         return out
 
     async def _events(self, ns: str, t0) -> list[dict]:
         events = await self.k8s._events(ns, None, None, None)
-        keep = {"Killing", "BackOff", "Failed", "FailedScheduling", "Evicted", "OOMKilling", "Unhealthy",
-                "ScalingReplicaSet", "SuccessfulRescale", "FailedMount", "NodeNotReady", "Preempting"}
-        return [{"time": e["time"], "source": "k8s_event", "namespace": ns,
-                 "summary": f"{e['type']} {e['reason']} {e['object']}: {e['message'][:200]}"}
-                for e in events if e["reason"] in keep or e["type"] == "Warning"]
+        keep = {
+            "Killing",
+            "BackOff",
+            "Failed",
+            "FailedScheduling",
+            "Evicted",
+            "OOMKilling",
+            "Unhealthy",
+            "ScalingReplicaSet",
+            "SuccessfulRescale",
+            "FailedMount",
+            "NodeNotReady",
+            "Preempting",
+        }
+        return [
+            {
+                "time": e["time"],
+                "source": "k8s_event",
+                "namespace": ns,
+                "summary": f"{e['type']} {e['reason']} {e['object']}: {e['message'][:200]}",
+            }
+            for e in events
+            if e["reason"] in keep or e["type"] == "Warning"
+        ]
 
     async def _helmreleases(self, ns: str, t0) -> list[dict]:
         try:
@@ -103,9 +138,15 @@ class TimelineTools:
             for h in hr.get("status", {}).get("history", []) or []:
                 ts = h.get("lastDeployed") or h.get("firstDeployed")
                 if ts:
-                    out.append({"time": ts, "source": "helm_release", "namespace": ns,
-                                "summary": f"HelmRelease {hr['metadata']['name']} chart {h.get('chartName')} "
-                                f"{h.get('chartVersion')} {h.get('status')}"})
+                    out.append(
+                        {
+                            "time": ts,
+                            "source": "helm_release",
+                            "namespace": ns,
+                            "summary": f"HelmRelease {hr['metadata']['name']} chart {h.get('chartName')} "
+                            f"{h.get('chartVersion')} {h.get('status')}",
+                        }
+                    )
         return out
 
     async def _flux(self, t0, namespaces: list[str]) -> list[dict]:
@@ -120,22 +161,42 @@ class TimelineTools:
         for ks in data.get("items", []):
             for c in ks.get("status", {}).get("conditions", []) or []:
                 if c.get("type") == "Ready" and c.get("lastTransitionTime"):
-                    out.append({"time": c["lastTransitionTime"], "source": "flux_kustomization",
-                                "summary": f"Kustomization {ks['metadata']['name']} Ready={c['status']} "
-                                f"{c.get('reason')}: {(c.get('message') or '')[:160]}"})
+                    out.append(
+                        {
+                            "time": c["lastTransitionTime"],
+                            "source": "flux_kustomization",
+                            "summary": f"Kustomization {ks['metadata']['name']} Ready={c['status']} "
+                            f"{c.get('reason')}: {(c.get('message') or '')[:160]}",
+                        }
+                    )
         events = await self.k8s._events(ns, None, None, None)
-        out += [{"time": e["time"], "source": "flux_event",
-                 "summary": f"{e['type']} {e['reason']} {e['object']}: {e['message'][:200]}"} for e in events]
+        out += [
+            {
+                "time": e["time"],
+                "source": "flux_event",
+                "summary": f"{e['type']} {e['reason']} {e['object']}: {e['message'][:200]}",
+            }
+            for e in events
+        ]
         return out
 
     def tools(self) -> list[Tool]:
-        return [Tool(
-            "get_change_timeline",
-            "One ordered list of recent changes for a service: commits, merged PRs, deploys, Terraform runs, "
-            "Kubernetes rollouts and warning events, Flux reconciliations and Helm upgrades. Max 7 days, "
-            "100 entries. Sources that fail are listed under gaps.",
-            {"type": "object", "properties": {
-                "service": {"type": "string"}, "since": {"type": "string", "description": "for example now-2h"},
-                "namespace": {"type": "string"}}},
-            "timeline", self.get_change_timeline, 40,
-        )]
+        return [
+            Tool(
+                "get_change_timeline",
+                "One ordered list of recent changes for a service: commits, merged PRs, deploys, Terraform runs, "
+                "Kubernetes rollouts and warning events, Flux reconciliations and Helm upgrades. Max 7 days, "
+                "100 entries. Sources that fail are listed under gaps.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "service": {"type": "string"},
+                        "since": {"type": "string", "description": "for example now-2h"},
+                        "namespace": {"type": "string"},
+                    },
+                },
+                "timeline",
+                self.get_change_timeline,
+                40,
+            )
+        ]

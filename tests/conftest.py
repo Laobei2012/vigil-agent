@@ -6,8 +6,17 @@ import pytest
 from vigil_agent.state.store import Store
 
 DSN = os.environ.get("VIGIL_TEST_DATABASE_URL", "postgresql://vigil:vigil@localhost:55432/vigil")
-TABLES = ("inbox", "processed_events", "incidents", "transcripts", "investigations", "spend", "feedback",
-          "pending_flaps", "slack_outbox")
+TABLES = (
+    "inbox",
+    "processed_events",
+    "incidents",
+    "transcripts",
+    "investigations",
+    "spend",
+    "feedback",
+    "pending_flaps",
+    "slack_outbox",
+)
 
 
 def _db_available() -> bool:

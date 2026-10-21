@@ -31,8 +31,9 @@ from vigil_agent.gateway.tools.timeline import TimelineTools
 log = logging.getLogger("vigil.gateway")
 
 
-def build_registry(s: GatewaySettings, http: httpx.AsyncClient | None = None,
-                   k8s: KubernetesTools | None = None) -> Registry:
+def build_registry(
+    s: GatewaySettings, http: httpx.AsyncClient | None = None, k8s: KubernetesTools | None = None
+) -> Registry:
     http = http or httpx.AsyncClient(timeout=30, headers={"User-Agent": "vigil-agent-gateway"})
     catalog = Catalog.load(s.catalog_path) if s.catalog_path else None
     backends = ("metrics", "logs", "kubernetes", "github", "codebase", "jira", "confluence", "timeline")

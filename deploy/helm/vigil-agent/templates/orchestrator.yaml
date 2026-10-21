@@ -1,0 +1,117 @@
+{{- $name := include "vigil.name" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-orchestrator
+  labels: {{- include "vigil.labels" . | nindent 4 }}
+    app.kubernetes.io/component: orchestrator
+spec:
+  replicas: {{ .Values.orchestrator.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: orchestrator
+  template:
+    metadata:
+      labels: {{- include "vigil.labels" . | nindent 8 }}
+        app.kubernetes.io/component: orchestrator
+      annotations:
+        checksum/prompts: {{ toYaml .Values.prompts | sha256sum }}
+    spec:
+      serviceAccountName: {{ $name }}-orchestrator
+      automountServiceAccountToken: false
+      securityContext: {{- include "vigil.podSecurity" . | nindent 8 }}
+      {{- with .Values.orchestrator.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.orchestrator.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: orchestrator
+          image: {{ include "vigil.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: [orchestrator]
+          ports:
+            - {name: http, containerPort: 8080}
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - {name: VIGIL_CLUSTER, value: {{ .Values.cluster | quote }}}
+            - {name: VIGIL_PRIMARY_CLUSTER, value: {{ .Values.primaryCluster | quote }}}
+            - {name: VIGIL_QUEUE, value: {{ .Values.config.queue | quote }}}
+            - {name: VIGIL_CATALOG_PATH, value: /etc/vigil/catalog/services.yaml}
+            - {name: VIGIL_FLAGS_PATH, value: /etc/vigil/flags/flags.yaml}
+            {{- if .Values.prompts }}
+            - {name: VIGIL_PROMPTS_DIR, value: /etc/vigil/prompts}
+            {{- end }}
+            - {name: VIGIL_GATEWAY_URL, value: "http://{{ $name }}-gateway:8081"}
+            - {name: VIGIL_MODEL_ENABLED, value: {{ .Values.config.modelEnabled | quote }}}
+            - {name: VIGIL_BEDROCK_REGION, value: {{ .Values.config.bedrockRegion | quote }}}
+            - {name: VIGIL_MODEL_ID, value: {{ .Values.config.modelId | quote }}}
+            - {name: VIGIL_MODEL_EFFORT, value: {{ .Values.config.modelEffort | quote }}}
+            - {name: VIGIL_SLACK_DRY_RUN, value: {{ .Values.config.slackDryRun | quote }}}
+            - {name: VIGIL_SLACK_FALLBACK_CHANNEL, value: {{ .Values.config.slackFallbackChannel | quote }}}
+            - {name: VIGIL_SLACK_HEALTH_CHANNEL, value: {{ .Values.config.slackHealthChannel | quote }}}
+            - {name: VIGIL_GRAFANA_URL, value: {{ .Values.config.grafanaUrl | quote }}}
+            - {name: VIGIL_LINK_ALLOWLIST, value: {{ .Values.config.linkAllowlist | quote }}}
+            - {name: VIGIL_EARLY_START_ENABLED, value: {{ .Values.config.earlyStartEnabled | quote }}}
+            {{- if .Values.config.pendingAlertsUrl }}
+            - {name: VIGIL_PENDING_ALERTS_URL, value: {{ .Values.config.pendingAlertsUrl | quote }}}
+            {{- end }}
+            - {name: VIGIL_DAILY_SPEND_CAP_USD, value: {{ .Values.config.dailySpendCapUsd | quote }}}
+            - {name: VIGIL_MAX_RUNNING_CLUSTER, value: {{ .Values.config.maxRunningCluster | quote }}}
+            - {name: VIGIL_MAX_RUNNING_POD, value: {{ .Values.config.maxRunningPod | quote }}}
+            - name: VIGIL_DATABASE_URL
+              valueFrom: {secretKeyRef: {name: {{ .Values.databaseSecret }}, key: uri}}
+            {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_GATEWAY_TOKEN" "secret" .Values.gatewayTokenSecret "key" "token") | nindent 12 }}
+            {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_SLACK_BOT_TOKEN" "secret" .Values.existingSecret "key" "slack-bot-token") | nindent 12 }}
+            {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_SLACK_APP_TOKEN" "secret" .Values.existingSecret "key" "slack-app-token") | nindent 12 }}
+            {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_PD_WEBHOOK_SECRETS" "secret" .Values.existingSecret "key" "pd-webhook-secrets") | nindent 12 }}
+            {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_PD_API_KEY" "secret" .Values.existingSecret "key" "pd-api-key") | nindent 12 }}
+            {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_AM_WEBHOOK_TOKEN" "secret" .Values.existingSecret "key" "am-webhook-token") | nindent 12 }}
+            {{- include "vigil.optionalSecretEnv" (dict "env" "AWS_ACCESS_KEY_ID" "secret" .Values.existingSecret "key" "aws-access-key-id") | nindent 12 }}
+            {{- include "vigil.optionalSecretEnv" (dict "env" "AWS_SECRET_ACCESS_KEY" "secret" .Values.existingSecret "key" "aws-secret-access-key") | nindent 12 }}
+            {{- range $k, $v := .Values.orchestrator.env }}
+            - {name: {{ $k }}, value: {{ $v | quote }}}
+            {{- end }}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources: {{- toYaml .Values.orchestrator.resources | nindent 12 }}
+          securityContext: {{- include "vigil.containerSecurity" . | nindent 12 }}
+          volumeMounts:
+            - {name: catalog, mountPath: /etc/vigil/catalog, readOnly: true}
+            - {name: flags, mountPath: /etc/vigil/flags, readOnly: true}
+            {{- if .Values.prompts }}
+            - {name: prompts, mountPath: /etc/vigil/prompts, readOnly: true}
+            {{- end }}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: catalog
+          configMap: {name: {{ $name }}-catalog}
+        - name: flags
+          configMap: {name: {{ $name }}-flags}
+        {{- if .Values.prompts }}
+        - name: prompts
+          configMap: {name: {{ $name }}-prompts}
+        {{- end }}
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-orchestrator
+  labels: {{- include "vigil.labels" . | nindent 4 }}
+    app.kubernetes.io/component: orchestrator
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: orchestrator
+  ports:
+    - {name: http, port: 8080, targetPort: http}

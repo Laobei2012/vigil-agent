@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vigil.name" . }}-catalog
+  labels: {{- include "vigil.labels" . | nindent 4 }}
+data:
+  services.yaml: |
+{{ toYaml .Values.catalog | indent 4 }}
+---
+# The kill switch. The orchestrator reads it again on change, without a restart.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vigil.name" . }}-flags
+  labels: {{- include "vigil.labels" . | nindent 4 }}
+data:
+  flags.yaml: |
+{{ toYaml .Values.flags | indent 4 }}
+{{- if .Values.prompts }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vigil.name" . }}-prompts
+  labels: {{- include "vigil.labels" . | nindent 4 }}
+data:
+{{- range $name, $body := .Values.prompts }}
+  {{ $name }}: |
+{{ $body | indent 4 }}
+{{- end }}
+{{- end }}

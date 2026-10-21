@@ -1,0 +1,21 @@
+{{- if .Values.postgres.cnpg }}
+# CloudNativePG creates the Secret <release>-db-app with the key "uri".
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "vigil.name" . }}-db
+  labels: {{- include "vigil.labels" . | nindent 4 }}
+spec:
+  instances: {{ .Values.postgres.instances }}
+  imageName: {{ .Values.postgres.imageName }}
+  bootstrap:
+    initdb:
+      database: vigil_agent
+      owner: vigil_agent
+  storage:
+    size: {{ .Values.postgres.size }}
+    storageClass: {{ .Values.postgres.storageClass }}
+  resources:
+    requests: {cpu: 50m, memory: 256Mi}
+    limits: {memory: 512Mi}
+{{- end }}

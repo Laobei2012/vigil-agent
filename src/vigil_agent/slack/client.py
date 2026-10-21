@@ -21,14 +21,16 @@ log = logging.getLogger("vigil.slack")
 
 
 class SlackPoster(Protocol):
-    async def post(self, channel: str, text: str, blocks: list[dict] | None = None,
-                   thread_ts: str | None = None) -> str: ...
+    async def post(
+        self, channel: str, text: str, blocks: list[dict] | None = None, thread_ts: str | None = None
+    ) -> str: ...
 
     async def update(self, channel: str, ts: str, text: str, blocks: list[dict] | None = None) -> None: ...
 
 
-async def post_blocks(slack: SlackPoster, channel: str, text: str, blocks: list[dict],
-                      thread_ts: str | None) -> list[str]:
+async def post_blocks(
+    slack: SlackPoster, channel: str, text: str, blocks: list[dict], thread_ts: str | None
+) -> list[str]:
     """Post blocks as one or more messages, 50 blocks each. Returns the message timestamps."""
     out = []
     for i, part in enumerate(split_messages(blocks)):
@@ -37,8 +39,7 @@ async def post_blocks(slack: SlackPoster, channel: str, text: str, blocks: list[
 
 
 class SlackClient:
-    def __init__(self, token: str, client: AsyncWebClient | None = None, max_retries: int = 4,
-                 sleep=asyncio.sleep):
+    def __init__(self, token: str, client: AsyncWebClient | None = None, max_retries: int = 4, sleep=asyncio.sleep):
         self.client = client or AsyncWebClient(token=token)
         self.max_retries = max_retries
         self.sleep = sleep
@@ -51,15 +52,21 @@ class SlackClient:
                 status = exc.response.status_code
                 if attempt == self.max_retries or not (status == 429 or status >= 500):
                     raise
-                delay = float(exc.response.headers.get("Retry-After", 2 ** attempt)) if status == 429 \
-                    else 2 ** attempt
+                delay = float(exc.response.headers.get("Retry-After", 2**attempt)) if status == 429 else 2**attempt
                 log.warning("slack %s returned %s, retry in %.0fs", method, status, delay)
                 await self.sleep(delay)
         raise RuntimeError("unreachable")
 
     async def post(self, channel, text, blocks=None, thread_ts=None) -> str:
-        resp = await self._call("chat_postMessage", channel=channel, text=text, blocks=blocks,
-                                thread_ts=thread_ts, unfurl_links=False, unfurl_media=False)
+        resp = await self._call(
+            "chat_postMessage",
+            channel=channel,
+            text=text,
+            blocks=blocks,
+            thread_ts=thread_ts,
+            unfurl_links=False,
+            unfurl_media=False,
+        )
         return resp["ts"]
 
     async def update(self, channel, ts, text, blocks=None) -> None:

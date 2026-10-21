@@ -6,8 +6,19 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-CATEGORIES = ["bad_deploy", "config_change", "resource_exhaustion", "dependency_failure", "infrastructure",
-              "capacity", "certificate", "secret_or_credential", "external", "flapping_or_noise", "unknown"]
+CATEGORIES = [
+    "bad_deploy",
+    "config_change",
+    "resource_exhaustion",
+    "dependency_failure",
+    "infrastructure",
+    "capacity",
+    "certificate",
+    "secret_or_credential",
+    "external",
+    "flapping_or_noise",
+    "unknown",
+]
 
 
 class Hypothesis(BaseModel):
@@ -57,37 +68,59 @@ SUBMIT_REPORT_TOOL = {
         "properties": {
             "mode": {"type": "string", "enum": ["fast", "deep"]},
             "verdict": {"type": "string", "description": "One line: the most likely cause and the next step."},
-            "summary": {"type": "string", "description": "One or two sentences: what is happening, who is "
-                        "affected."},
-            "impact": {"type": "string", "description": "Affected service and endpoints, error rate or latency "
-                       "against baseline, start time. Say unknown where unknown."},
-            "timeline": {"type": "array", "items": {"type": "string"}, "description": "Ordered events: alert "
-                         "start, deploys, config changes, related alerts, Kubernetes events, each with time."},
+            "summary": {"type": "string", "description": "One or two sentences: what is happening, who is affected."},
+            "impact": {
+                "type": "string",
+                "description": "Affected service and endpoints, error rate or latency "
+                "against baseline, start time. Say unknown where unknown.",
+            },
+            "timeline": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Ordered events: alert "
+                "start, deploys, config changes, related alerts, Kubernetes events, each with time.",
+            },
             "hypotheses": {
-                "type": "array", "maxItems": 3,
-                "items": {"type": "object", "properties": {
-                    "cause": {"type": "string"},
-                    "category": {"type": "string", "enum": CATEGORIES},
-                    "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
-                    "evidence_ids": {"type": "array", "items": {"type": "string"}},
-                    "status": {"type": "string", "enum": ["new", "confirmed", "ruled_out", "replaced",
-                                                          "unchanged"],
-                               "description": "Deep pass: compare with the first-pass hypothesis."},
-                    "note": {"type": "string"}},
-                    "required": ["cause", "category", "confidence", "evidence_ids"]}},
+                "type": "array",
+                "maxItems": 3,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "cause": {"type": "string"},
+                        "category": {"type": "string", "enum": CATEGORIES},
+                        "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+                        "evidence_ids": {"type": "array", "items": {"type": "string"}},
+                        "status": {
+                            "type": "string",
+                            "enum": ["new", "confirmed", "ruled_out", "replaced", "unchanged"],
+                            "description": "Deep pass: compare with the first-pass hypothesis.",
+                        },
+                        "note": {"type": "string"},
+                    },
+                    "required": ["cause", "category", "confidence", "evidence_ids"],
+                },
+            },
             "mitigations": {
                 "type": "array",
-                "items": {"type": "object", "properties": {
-                    "action": {"type": "string"},
-                    "risk": {"type": "string", "enum": ["low", "medium", "high"]},
-                    "expected_effect": {"type": "string"},
-                    "command": {"type": "string", "description": "Exact command or runbook step for a human."},
-                    "runbook_ref": {"type": "string"},
-                    "evidence_ids": {"type": "array", "items": {"type": "string"}}},
-                    "required": ["action", "risk", "expected_effect"]},
-                "description": "Ranked, lowest risk first among equally effective options."},
-            "gaps": {"type": "array", "items": {"type": "string"},
-                     "description": "What you could not check or found inconclusive."},
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "action": {"type": "string"},
+                        "risk": {"type": "string", "enum": ["low", "medium", "high"]},
+                        "expected_effect": {"type": "string"},
+                        "command": {"type": "string", "description": "Exact command or runbook step for a human."},
+                        "runbook_ref": {"type": "string"},
+                        "evidence_ids": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["action", "risk", "expected_effect"],
+                },
+                "description": "Ranked, lowest risk first among equally effective options.",
+            },
+            "gaps": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "What you could not check or found inconclusive.",
+            },
             "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
         },
         "required": ["mode", "verdict", "summary", "impact", "hypotheses", "mitigations", "gaps", "confidence"],

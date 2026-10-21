@@ -39,11 +39,22 @@ class JiraTools:
         if not self.s.jira_projects:
             raise ToolError("not_configured", "no Jira projects are allowed")
         query = f"({jql}) AND {self._project_clause()}"
-        data = await self._get("/rest/api/3/search/jql", {
-            "jql": query, "maxResults": min(max_results, 20),
-            "fields": "summary,status,resolution,created,resolutiondate,labels,components,priority"})
-        issues = [{"key": i["key"], **{k: _field(v) for k, v in i.get("fields", {}).items()},
-                   "url": f"{self.base}/browse/{i['key']}"} for i in data.get("issues", [])]
+        data = await self._get(
+            "/rest/api/3/search/jql",
+            {
+                "jql": query,
+                "maxResults": min(max_results, 20),
+                "fields": "summary,status,resolution,created,resolutiondate,labels,components,priority",
+            },
+        )
+        issues = [
+            {
+                "key": i["key"],
+                **{k: _field(v) for k, v in i.get("fields", {}).items()},
+                "url": f"{self.base}/browse/{i['key']}",
+            }
+            for i in data.get("issues", [])
+        ]
         return ToolOutput({"issues": issues}, f"{self.base}/issues/?jql={query}")
 
     async def get_issue(self, key: str) -> ToolOutput:
@@ -53,23 +64,42 @@ class JiraTools:
         rendered = data.get("renderedFields", {}) or {}
         fields = data.get("fields", {}) or {}
         comments = (rendered.get("comment") or {}).get("comments", [])[-10:]
-        return ToolOutput({
-            "key": key, "summary": fields.get("summary"), "status": _field(fields.get("status")),
-            "resolution": _field(fields.get("resolution")),
-            "description": _TAGS.sub("", rendered.get("description") or "")[:8000],
-            "comments": [_TAGS.sub("", c.get("body", ""))[:2000] for c in comments],
-        }, f"{self.base}/browse/{key}")
+        return ToolOutput(
+            {
+                "key": key,
+                "summary": fields.get("summary"),
+                "status": _field(fields.get("status")),
+                "resolution": _field(fields.get("resolution")),
+                "description": _TAGS.sub("", rendered.get("description") or "")[:8000],
+                "comments": [_TAGS.sub("", c.get("body", ""))[:2000] for c in comments],
+            },
+            f"{self.base}/browse/{key}",
+        )
 
     def tools(self) -> list[Tool]:
         return [
-            Tool("search_issues", "Search Jira issues (postmortems, past incidents) with JQL. Results are "
-                 "limited to the allowed projects.", {"type": "object", "properties": {
-                     "jql": {"type": "string", "maxLength": MAX_JQL},
-                     "max_results": {"type": "integer", "minimum": 1, "maximum": 20}},
-                 "required": ["jql"]}, "jira", self.search_issues),
-            Tool("get_issue", "Read one Jira issue with its description and last comments.",
-                 {"type": "object", "properties": {"key": {"type": "string"}}, "required": ["key"]},
-                 "jira", self.get_issue),
+            Tool(
+                "search_issues",
+                "Search Jira issues (postmortems, past incidents) with JQL. Results are "
+                "limited to the allowed projects.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "jql": {"type": "string", "maxLength": MAX_JQL},
+                        "max_results": {"type": "integer", "minimum": 1, "maximum": 20},
+                    },
+                    "required": ["jql"],
+                },
+                "jira",
+                self.search_issues,
+            ),
+            Tool(
+                "get_issue",
+                "Read one Jira issue with its description and last comments.",
+                {"type": "object", "properties": {"key": {"type": "string"}}, "required": ["key"]},
+                "jira",
+                self.get_issue,
+            ),
         ]
 
 
@@ -92,9 +122,18 @@ class ConfluenceTools:
         spaces = ",".join(f'"{s}"' for s in self.s.confluence_spaces)
         query = f"({cql}) AND space in ({spaces})"
         data = await self._get("/rest/api/content/search", {"cql": query, "limit": min(limit, 20)})
-        return ToolOutput({"results": [
-            {"id": r["id"], "title": r.get("title"), "url": f"{self.base}{r.get('_links', {}).get('webui', '')}"}
-            for r in data.get("results", [])]})
+        return ToolOutput(
+            {
+                "results": [
+                    {
+                        "id": r["id"],
+                        "title": r.get("title"),
+                        "url": f"{self.base}{r.get('_links', {}).get('webui', '')}",
+                    }
+                    for r in data.get("results", [])
+                ]
+            }
+        )
 
     async def get_page(self, page_id: str) -> ToolOutput:
         data = await self._get(f"/rest/api/content/{page_id}", {"expand": "body.storage,space"})
@@ -102,19 +141,35 @@ class ConfluenceTools:
         if space not in self.s.confluence_spaces:
             raise ToolError("forbidden", f"space {space} is not in the allowlist")
         body = _TAGS.sub(" ", data.get("body", {}).get("storage", {}).get("value", ""))
-        return ToolOutput({"id": page_id, "title": data.get("title"), "space": space,
-                           "body": body[:MAX_PAGE_CHARS]},
-                          f"{self.base}{data.get('_links', {}).get('webui', '')}", len(body) > MAX_PAGE_CHARS)
+        return ToolOutput(
+            {"id": page_id, "title": data.get("title"), "space": space, "body": body[:MAX_PAGE_CHARS]},
+            f"{self.base}{data.get('_links', {}).get('webui', '')}",
+            len(body) > MAX_PAGE_CHARS,
+        )
 
     def tools(self) -> list[Tool]:
         return [
-            Tool("confluence_search", "Search runbook and architecture pages in Confluence with CQL.",
-                 {"type": "object", "properties": {"cql": {"type": "string", "maxLength": 500},
-                                                   "limit": {"type": "integer", "minimum": 1, "maximum": 20}},
-                  "required": ["cql"]}, "confluence", self.confluence_search),
-            Tool("get_page", "Read one Confluence page as text, truncated to 20000 characters.",
-                 {"type": "object", "properties": {"page_id": {"type": "string"}}, "required": ["page_id"]},
-                 "confluence", self.get_page),
+            Tool(
+                "confluence_search",
+                "Search runbook and architecture pages in Confluence with CQL.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "cql": {"type": "string", "maxLength": 500},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                    },
+                    "required": ["cql"],
+                },
+                "confluence",
+                self.confluence_search,
+            ),
+            Tool(
+                "get_page",
+                "Read one Confluence page as text, truncated to 20000 characters.",
+                {"type": "object", "properties": {"page_id": {"type": "string"}}, "required": ["page_id"]},
+                "confluence",
+                self.get_page,
+            ),
         ]
 
 

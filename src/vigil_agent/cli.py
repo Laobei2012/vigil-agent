@@ -19,8 +19,11 @@ log = logging.getLogger("vigil")
 
 
 def _logging() -> None:
-    logging.basicConfig(level=os.environ.get("VIGIL_LOG_LEVEL", "INFO"),
-                        format="%(asctime)s %(levelname)s %(name)s %(message)s", stream=sys.stdout)
+    logging.basicConfig(
+        level=os.environ.get("VIGIL_LOG_LEVEL", "INFO"),
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        stream=sys.stdout,
+    )
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
@@ -63,8 +66,14 @@ def build_orchestrator(s: Settings):
             from vigil_agent.slack.interactivity import start_socket_mode
 
             socket = await start_socket_mode(s.slack_app_token, s.slack_bot_token, store)
-        log.info("orchestrator %s started: cluster=%s model=%s slack=%s queue=%s", s.owner, s.cluster,
-                 s.model_id if model else "off", type(slack).__name__, s.queue)
+        log.info(
+            "orchestrator %s started: cluster=%s model=%s slack=%s queue=%s",
+            s.owner,
+            s.cluster,
+            s.model_id if model else "off",
+            type(slack).__name__,
+            s.queue,
+        )
         yield
         await runtime.stop()
         if sqs_task:

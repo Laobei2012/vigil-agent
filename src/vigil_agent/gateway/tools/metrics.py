@@ -19,8 +19,7 @@ def explore_url(grafana: str, uid: str, ds_type: str, expr: str, start: str, end
     query["expr"] = expr
     panes = {"a": {"datasource": uid, "queries": [query], "range": {"from": start, "to": end}}}
     return (
-        f"{grafana.rstrip('/')}/explore?schemaVersion=1&orgId=1&panes="
-        f"{quote(json.dumps(panes, separators=(',', ':')))}"
+        f"{grafana.rstrip('/')}/explore?schemaVersion=1&orgId=1&panes={quote(json.dumps(panes, separators=(',', ':')))}"
     )
 
 
@@ -35,9 +34,7 @@ class MetricsTools:
         self.base = (settings.metrics_url or "").rstrip("/")
 
     async def _get(self, path: str, params: dict) -> dict:
-        resp = await self.http.get(
-            f"{self.base}{path}", params=params, timeout=self.s.metrics_timeout_seconds
-        )
+        resp = await self.http.get(f"{self.base}{path}", params=params, timeout=self.s.metrics_timeout_seconds)
         if resp.status_code >= 400:
             raise ToolError("backend_error", f"metrics backend {resp.status_code}: {resp.text[:300]}")
         body = resp.json()
@@ -59,8 +56,12 @@ class MetricsTools:
         result, truncated = self._cap(data.get("result", []))
         series = [{"metric": r.get("metric", {}), "value": r.get("value")} for r in result]
         url = explore_url(
-            self.s.grafana_url, self.s.grafana_metrics_uid, "prometheus", query,
-            _ms(at - timedelta(hours=1)), _ms(at),
+            self.s.grafana_url,
+            self.s.grafana_metrics_uid,
+            "prometheus",
+            query,
+            _ms(at - timedelta(hours=1)),
+            _ms(at),
         )
         return ToolOutput(
             {"result_type": data.get("resultType"), "series": series, "series_count": len(series)},
@@ -91,9 +92,7 @@ class MetricsTools:
         )
         result, truncated = self._cap(data.get("result", []))
         series = [_summarize_series(r) for r in result]
-        url = explore_url(
-            self.s.grafana_url, self.s.grafana_metrics_uid, "prometheus", query, _ms(t0), _ms(t1)
-        )
+        url = explore_url(self.s.grafana_url, self.s.grafana_metrics_uid, "prometheus", query, _ms(t0), _ms(t1))
         return ToolOutput({"series": series, "series_count": len(series)}, url, truncated)
 
     async def list_alert_rules(self, name_filter: str | None = None, state: str | None = None) -> ToolOutput:
@@ -125,9 +124,7 @@ class MetricsTools:
 
     async def series_labels(self, match: str, start: str = "now-1h", end: str = "now") -> ToolOutput:
         t0, t1 = parse_time(start), parse_time(end)
-        data = await self._get(
-            "/api/v1/series", {"match[]": match, "start": t0.timestamp(), "end": t1.timestamp()}
-        )
+        data = await self._get("/api/v1/series", {"match[]": match, "start": t0.timestamp(), "end": t1.timestamp()})
         series = data if isinstance(data, list) else []
         capped, truncated = self._cap(series)
         return ToolOutput({"series": capped, "count": len(series)}, None, truncated)
@@ -148,7 +145,9 @@ class MetricsTools:
                     },
                     "required": ["query"],
                 },
-                b, self.query_instant, t,
+                b,
+                self.query_instant,
+                t,
             ),
             Tool(
                 "query_range",
@@ -164,7 +163,9 @@ class MetricsTools:
                     },
                     "required": ["query", "start"],
                 },
-                b, self.query_range, t,
+                b,
+                self.query_range,
+                t,
             ),
             Tool(
                 "list_alert_rules",
@@ -177,11 +178,13 @@ class MetricsTools:
                         "state": {"type": "string", "enum": ["inactive", "pending", "firing"]},
                     },
                 },
-                b, self.list_alert_rules, t,
+                b,
+                self.list_alert_rules,
+                t,
             ),
             Tool(
                 "series_labels",
-                "List the label sets of series that match a selector, for example {namespace=\"x\"}.",
+                'List the label sets of series that match a selector, for example {namespace="x"}.',
                 {
                     "type": "object",
                     "properties": {
@@ -191,7 +194,9 @@ class MetricsTools:
                     },
                     "required": ["match"],
                 },
-                b, self.series_labels, t,
+                b,
+                self.series_labels,
+                t,
             ),
         ]
 

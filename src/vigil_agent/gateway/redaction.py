@@ -25,9 +25,7 @@ _SECRET_PATTERNS: list[tuple[str, re.Pattern[str], int]] = [
     ("aws_access_key", re.compile(r"\b(?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}\b"), 0),
     (
         "aws_secret_key",
-        re.compile(
-            r"(?i)(aws_?secret_?(?:access_?)?key[\"']?\s*[:=]\s*[\"']?)([A-Za-z0-9/+=]{40})"
-        ),
+        re.compile(r"(?i)(aws_?secret_?(?:access_?)?key[\"']?\s*[:=]\s*[\"']?)([A-Za-z0-9/+=]{40})"),
         2,
     ),
     ("jwt", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"), 0),

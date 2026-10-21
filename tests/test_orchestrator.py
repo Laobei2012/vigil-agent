@@ -33,13 +33,30 @@ SECRET = "whsec_test"
 CATALOG = {
     "defaults": {"fallback_channel": "#vigil-fallback", "unmapped_enabled": False},
     "services": [
-        {"name": "oci-cost", "vigil_enabled": True, "pd_service_ids": ["PSVC123"], "team": "sre",
-         "slack_channel": "#vigil-test", "namespaces": ["oci-cost"], "repos": ["Laobei2012/oci-free-cloud-k8s"],
-         "runbook": "README.md",
-         "context_packs": [{"alert_name": "KubeJobFailed", "metric_queries": ['kube_job_failed{namespace="oci-cost"}'],
-                            "log_query": '{namespace="oci-cost"} |= "error"'}]},
-        {"name": "jenkins", "vigil_enabled": False, "team": "sre", "slack_channel": "#vigil-test",
-         "namespaces": ["jenkins"]},
+        {
+            "name": "oci-cost",
+            "vigil_enabled": True,
+            "pd_service_ids": ["PSVC123"],
+            "team": "sre",
+            "slack_channel": "#vigil-test",
+            "namespaces": ["oci-cost"],
+            "repos": ["Laobei2012/oci-free-cloud-k8s"],
+            "runbook": "README.md",
+            "context_packs": [
+                {
+                    "alert_name": "KubeJobFailed",
+                    "metric_queries": ['kube_job_failed{namespace="oci-cost"}'],
+                    "log_query": '{namespace="oci-cost"} |= "error"',
+                }
+            ],
+        },
+        {
+            "name": "jenkins",
+            "vigil_enabled": False,
+            "team": "sre",
+            "slack_channel": "#vigil-test",
+            "namespaces": ["jenkins"],
+        },
     ],
 }
 
@@ -68,8 +85,10 @@ class FakeGateway:
         self.slow = set(slow)
 
     async def schemas(self):
-        return [{"name": n, "description": "", "input_schema": {"type": "object"}}
-                for n in ("query_range", "search_logs", "k8s_events", "get_change_timeline", "list_alert_rules")]
+        return [
+            {"name": n, "description": "", "input_schema": {"type": "object"}}
+            for n in ("query_range", "search_logs", "k8s_events", "get_change_timeline", "list_alert_rules")
+        ]
 
     async def call(self, name, args, incident_id):
         self.calls.append((name, args))
@@ -77,20 +96,47 @@ class FakeGateway:
             await asyncio.sleep(5)
         if name in self.fail:
             return {"ok": False, "error": "backend down", "error_code": "backend_error"}
-        data = {"list_alert_rules": {"rules": [{"name": "KubeJobFailed", "query": "kube_job_failed > 0",
-                                                "annotations": {"description": "Job failed."}}]},
-                "get_change_timeline": {"entries": [{"time": "2026-10-20T06:00:00Z", "source": "github_pr",
-                                                     "summary": "bump collector"}], "gaps": []},
-                "k8s_events": {"events": [{"time": "t", "type": "Warning", "reason": "BackoffLimitExceeded",
-                                           "object": "Job/x", "message": "Job has reached the backoff limit"}]},
-                }.get(name, {"series": [], "hits": 0, "top_patterns": [], "sample": []})
+        data = {
+            "list_alert_rules": {
+                "rules": [
+                    {
+                        "name": "KubeJobFailed",
+                        "query": "kube_job_failed > 0",
+                        "annotations": {"description": "Job failed."},
+                    }
+                ]
+            },
+            "get_change_timeline": {
+                "entries": [{"time": "2026-10-20T06:00:00Z", "source": "github_pr", "summary": "bump collector"}],
+                "gaps": [],
+            },
+            "k8s_events": {
+                "events": [
+                    {
+                        "time": "t",
+                        "type": "Warning",
+                        "reason": "BackoffLimitExceeded",
+                        "object": "Job/x",
+                        "message": "Job has reached the backoff limit",
+                    }
+                ]
+            },
+        }.get(name, {"series": [], "hits": 0, "top_patterns": [], "sample": []})
         return {"ok": True, "data": data, "evidence_url": f"https://monitoring.oci.liwenxin.com/{name}"}
 
 
 def make(store, *, model=None, gateway=None, pd_key=None, **kw):
-    s = Settings(database_url="unused", model_enabled=model is not None, pd_webhook_secrets=SECRET,
-                 pd_api_key=pd_key, owner="pod-a", fast_deadline_seconds=60, prefetch_timeout_seconds=2,
-                 deep_max_seconds=30, **kw)
+    s = Settings(
+        database_url="unused",
+        model_enabled=model is not None,
+        pd_webhook_secrets=SECRET,
+        pd_api_key=pd_key,
+        owner="pod-a",
+        fast_deadline_seconds=60,
+        prefetch_timeout_seconds=2,
+        deep_max_seconds=30,
+        **kw,
+    )
     catalog = ReloadingFile(None, None, Catalog.from_dict(CATALOG))
     flags = ReloadingFile(None, None, kw.pop("flags", Flags()) if "flags" in kw else Flags())
     slack = RecordingSlack()
@@ -114,11 +160,25 @@ def am_payload(status="firing", namespace="oci-cost", alertname="KubeJobFailed",
     labels = {"alertname": alertname, "namespace": namespace, "severity": "warning"}
     if cluster:
         labels["cluster"] = cluster
-    return {"version": "4", "groupKey": f'{{}}:{{alertname="{alertname}", namespace="{namespace}"}}',
-            "status": status, "receiver": "vigil", "groupLabels": {"alertname": alertname, "namespace": namespace},
-            "commonLabels": labels, "commonAnnotations": {"summary": "Job failed."}, "externalURL": "http://am",
-            "alerts": [{"status": status, "labels": labels, "annotations": {"summary": "Job failed."},
-                        "startsAt": "2026-10-20T06:00:00Z", "fingerprint": fp}]}
+    return {
+        "version": "4",
+        "groupKey": f'{{}}:{{alertname="{alertname}", namespace="{namespace}"}}',
+        "status": status,
+        "receiver": "vigil",
+        "groupLabels": {"alertname": alertname, "namespace": namespace},
+        "commonLabels": labels,
+        "commonAnnotations": {"summary": "Job failed."},
+        "externalURL": "http://am",
+        "alerts": [
+            {
+                "status": status,
+                "labels": labels,
+                "annotations": {"summary": "Job failed."},
+                "startsAt": "2026-10-20T06:00:00Z",
+                "fingerprint": fp,
+            }
+        ],
+    }
 
 
 # Parsing and signatures
@@ -153,14 +213,32 @@ def test_alertmanager_event_ids_dedupe_repeats():
 
 
 def test_routing():
-    ev = IntakeEvent(source="alertmanager", event_id="e", event_type="incident.triggered", incident_id="i",
-                     title="t", alerts=[Alert(labels={"cluster": "oci-phx"}), Alert(labels={"cluster": "eu"})])
+    ev = IntakeEvent(
+        source="alertmanager",
+        event_id="e",
+        event_type="incident.triggered",
+        incident_id="i",
+        title="t",
+        alerts=[Alert(labels={"cluster": "oci-phx"}), Alert(labels={"cluster": "eu"})],
+    )
     assert route(ev, "oci-phx", False) == (True, "cluster_label") and len(ev.alerts) == 1
-    other = IntakeEvent(source="alertmanager", event_id="e", event_type="incident.triggered", incident_id="i",
-                        title="t", alerts=[Alert(labels={"cluster": "eu"})])
+    other = IntakeEvent(
+        source="alertmanager",
+        event_id="e",
+        event_type="incident.triggered",
+        incident_id="i",
+        title="t",
+        alerts=[Alert(labels={"cluster": "eu"})],
+    )
     assert route(other, "oci-phx", True) == (False, "other_cluster")
-    none = IntakeEvent(source="alertmanager", event_id="e", event_type="incident.triggered", incident_id="i",
-                       title="t", alerts=[Alert(labels={})])
+    none = IntakeEvent(
+        source="alertmanager",
+        event_id="e",
+        event_type="incident.triggered",
+        incident_id="i",
+        title="t",
+        alerts=[Alert(labels={})],
+    )
     assert route(none, "oci-phx", True)[0] and not route(none, "oci-phx", False)[0]
 
 
@@ -174,8 +252,9 @@ async def test_receiver(store):
     sig = "v1=" + hmac.new(SECRET.encode(), body, hashlib.sha256).hexdigest()
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://r") as c:
         assert (await c.post("/webhooks/pagerduty", content=body)).status_code == 401
-        assert (await c.post("/webhooks/pagerduty", content=body + b" ",
-                             headers={"X-PagerDuty-Signature": sig})).status_code == 401
+        assert (
+            await c.post("/webhooks/pagerduty", content=body + b" ", headers={"X-PagerDuty-Signature": sig})
+        ).status_code == 401
         ok = await c.post("/webhooks/pagerduty", content=body, headers={"X-PagerDuty-Signature": sig})
         assert ok.status_code == 202
         other = json.loads(body)
@@ -223,7 +302,8 @@ async def test_new_incident_posts_placeholder_and_dedupes(store):
 @respx.mock
 async def test_pd_labels_are_fetched_and_routed(store):
     respx.get("https://pd.test/incidents/Q2K8TESTINC01/alerts").mock(
-        return_value=httpx.Response(200, json=json.loads((FIX / "pd" / "incident_alerts.json").read_text())))
+        return_value=httpx.Response(200, json=json.loads((FIX / "pd" / "incident_alerts.json").read_text()))
+    )
     _, intake, _, _, _, _ = make(store, pd_key="k")
     assert await intake.handle(pd_event()) == "claimed"
     inv = await store.get_investigation(1)
@@ -301,8 +381,11 @@ async def test_prefetch_runs_in_parallel_and_records_gaps():
     from vigil_agent.agent.loop import Evidence
 
     gw = FakeGateway(fail={"search_logs"}, slow={"k8s_events"})
-    p = plan(alert_name="KubeJobFailed", labels={"namespace": "oci-cost"},
-             entry=Catalog.from_dict(CATALOG).by_name("oci-cost"))
+    p = plan(
+        alert_name="KubeJobFailed",
+        labels={"namespace": "oci-cost"},
+        entry=Catalog.from_dict(CATALOG).by_name("oci-cost"),
+    )
 
     async def similar():
         return [{"verdict": "last time: bad chart"}]
@@ -338,14 +421,27 @@ async def test_degraded_mode_posts_evidence_only(store):
 
 
 async def test_fast_then_deep_pass(store):
-    deep = report_args("deep", verdict="Chart bump broke the collector", hypotheses=[
-        {"cause": "chart bump", "category": "bad_deploy", "confidence": "high", "evidence_ids": ["E1"],
-         "status": "confirmed", "note": "diff shows new env var"}])
-    model = FakeModel([
-        msg(tool_use("submit_report", report_args())),
-        msg(tool_use("query_range", {"query": "up"})),
-        msg(tool_use("submit_report", deep)),
-    ])
+    deep = report_args(
+        "deep",
+        verdict="Chart bump broke the collector",
+        hypotheses=[
+            {
+                "cause": "chart bump",
+                "category": "bad_deploy",
+                "confidence": "high",
+                "evidence_ids": ["E1"],
+                "status": "confirmed",
+                "note": "diff shows new env var",
+            }
+        ],
+    )
+    model = FakeModel(
+        [
+            msg(tool_use("submit_report", report_args())),
+            msg(tool_use("query_range", {"query": "up"})),
+            msg(tool_use("submit_report", deep)),
+        ]
+    )
     _, intake, _, slack, runtime, _ = make(store, model=model)
     await intake.handle(pd_event())
     await run_one(runtime, store)
@@ -364,8 +460,13 @@ async def test_fast_then_deep_pass(store):
 
 
 async def test_fast_pass_missing_report_falls_back_to_evidence(store):
-    model = FakeModel([msg({"type": "text", "text": "hmm"}), msg({"type": "text", "text": "hmm"}),
-                       msg(tool_use("submit_report", report_args("deep")))])
+    model = FakeModel(
+        [
+            msg({"type": "text", "text": "hmm"}),
+            msg({"type": "text", "text": "hmm"}),
+            msg(tool_use("submit_report", report_args("deep"))),
+        ]
+    )
     _, intake, _, slack, runtime, _ = make(store, model=model)
     await intake.handle(pd_event())
     await run_one(runtime, store)
@@ -392,8 +493,9 @@ async def test_resolve_stops_deep_pass(store):
 
 
 async def test_lease_takeover_resumes_without_reposting_first_pass(store):
-    model = FakeModel([msg(tool_use("submit_report", report_args())),
-                       msg(tool_use("submit_report", report_args("deep")))])
+    model = FakeModel(
+        [msg(tool_use("submit_report", report_args())), msg(tool_use("submit_report", report_args("deep")))]
+    )
     _, intake, inv_a, slack, runtime, _ = make(store, model=model)
     await intake.handle(pd_event())
     await store.schedule("pod-a", 3, 5, 90, True)
@@ -434,13 +536,24 @@ async def test_spend_cap_switches_to_evidence_only(store):
 
 
 async def test_early_start_held_then_released_by_page(store):
-    model = FakeModel([msg(tool_use("submit_report", report_args())),
-                       msg(tool_use("submit_report", report_args("deep")))])
-    _, intake, _, slack, runtime, _ = make(store, model=model, early_start_enabled=True,
-                                           pending_alerts_url="http://prom")
-    pending = {"data": {"alerts": [{"state": "pending", "activeAt": "2026-10-20T06:00:00Z",
-                                    "labels": {"alertname": "KubeJobFailed", "namespace": "oci-cost"},
-                                    "annotations": {"summary": "Job failed"}}]}}
+    model = FakeModel(
+        [msg(tool_use("submit_report", report_args())), msg(tool_use("submit_report", report_args("deep")))]
+    )
+    _, intake, _, slack, runtime, _ = make(
+        store, model=model, early_start_enabled=True, pending_alerts_url="http://prom"
+    )
+    pending = {
+        "data": {
+            "alerts": [
+                {
+                    "state": "pending",
+                    "activeAt": "2026-10-20T06:00:00Z",
+                    "labels": {"alertname": "KubeJobFailed", "namespace": "oci-cost"},
+                    "annotations": {"summary": "Job failed"},
+                }
+            ]
+        }
+    }
     with respx.mock:
         respx.get("http://prom/api/v1/alerts").mock(return_value=httpx.Response(200, json=pending))
         results = await asyncio.gather(runtime.poll_pending_once(), runtime.poll_pending_once())
@@ -458,29 +571,42 @@ async def test_early_start_held_then_released_by_page(store):
 
 
 async def test_early_start_pauses_at_half_the_spend_cap(store):
-    _, _, _, _, runtime, _ = make(store, model=FakeModel([]), early_start_enabled=True,
-                                  pending_alerts_url="http://prom", daily_spend_cap_usd=10)
+    _, _, _, _, runtime, _ = make(
+        store, model=FakeModel([]), early_start_enabled=True, pending_alerts_url="http://prom", daily_spend_cap_usd=10
+    )
     await store.add_spend("investigation", 6)
     assert not await runtime.allow_early()
 
 
 async def test_flapping_pending_alert_is_skipped(store):
-    _, _, _, _, runtime, _ = make(store, model=FakeModel([]), early_start_enabled=True,
-                                  pending_alerts_url="http://prom")
+    _, _, _, _, runtime, _ = make(
+        store, model=FakeModel([]), early_start_enabled=True, pending_alerts_url="http://prom"
+    )
     for _ in range(4):
         await store.incr_flap("oci-cost|KubeJobFailed")
-    pending = {"data": {"alerts": [{"state": "pending", "activeAt": "t",
-                                    "labels": {"alertname": "KubeJobFailed", "namespace": "oci-cost"}}]}}
+    pending = {
+        "data": {
+            "alerts": [
+                {"state": "pending", "activeAt": "t", "labels": {"alertname": "KubeJobFailed", "namespace": "oci-cost"}}
+            ]
+        }
+    }
     with respx.mock:
         respx.get("http://prom/api/v1/alerts").mock(return_value=httpx.Response(200, json=pending))
         assert await runtime.poll_pending_once() == 0
 
 
 async def test_flap_is_counted_when_pending_goes_inactive(store):
-    _, _, _, _, runtime, _ = make(store, model=FakeModel([]), early_start_enabled=False,
-                                  pending_alerts_url="http://prom")
-    pending = {"data": {"alerts": [{"state": "pending", "activeAt": "t",
-                                    "labels": {"alertname": "KubeJobFailed", "namespace": "oci-cost"}}]}}
+    _, _, _, _, runtime, _ = make(
+        store, model=FakeModel([]), early_start_enabled=False, pending_alerts_url="http://prom"
+    )
+    pending = {
+        "data": {
+            "alerts": [
+                {"state": "pending", "activeAt": "t", "labels": {"alertname": "KubeJobFailed", "namespace": "oci-cost"}}
+            ]
+        }
+    }
     with respx.mock:
         route_ = respx.get("http://prom/api/v1/alerts")
         route_.mock(return_value=httpx.Response(200, json=pending))

@@ -83,12 +83,14 @@ class CodebaseTools:
     async def _fetch_flux(self, sha: str, dest: Path) -> None:
         repo = await self.k8s._get(
             f"/apis/source.toolkit.fluxcd.io/v1/namespaces/{self.s.flux_source_namespace}"
-            f"/gitrepositories/{self.s.flux_source_name}")
+            f"/gitrepositories/{self.s.flux_source_name}"
+        )
         artifact = repo.get("status", {}).get("artifact") or {}
         available = artifact.get("revision", "").rsplit(":", 1)[-1]
         if not available or not (available.startswith(sha) or sha.startswith(available)):
-            raise ToolError("revision_unavailable",
-                            f"only the revision that Flux holds ({available[:12]}) can be read here")
+            raise ToolError(
+                "revision_unavailable", f"only the revision that Flux holds ({available[:12]}) can be read here"
+            )
         resp = await self.http.get(artifact["url"], timeout=30)
         if resp.status_code >= 400:
             raise ToolError("backend_error", f"flux artifact {resp.status_code}")
@@ -97,8 +99,13 @@ class CodebaseTools:
 
     async def _git(self, *args: str, cwd: Path | None = None) -> bytes:
         proc = await asyncio.create_subprocess_exec(
-            "git", *args, cwd=cwd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+            "git",
+            *args,
+            cwd=cwd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        )
         out, err = await asyncio.wait_for(proc.communicate(), 120)
         if proc.returncode != 0:
             raise ToolError("backend_error", f"git {args[0]} failed: {err.decode()[-300:]}")
@@ -117,17 +124,18 @@ class CodebaseTools:
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as tar:
             tar.extractall(dest, filter="data")
 
-    async def grep_code(self, pattern: str, sha: str, repo: str | None = None,
-                        path_glob: str | None = None) -> ToolOutput:
+    async def grep_code(
+        self, pattern: str, sha: str, repo: str | None = None, path_glob: str | None = None
+    ) -> ToolOutput:
         repo = self._repo(repo)
         root = await self.checkout(repo, sha)
-        args = ["rg", "--json", "--max-count", "5", "--max-columns", "300", "--regex-size-limit", "1M",
-                "-e", pattern]
+        args = ["rg", "--json", "--max-count", "5", "--max-columns", "300", "--regex-size-limit", "1M", "-e", pattern]
         if path_glob:
             args += ["--glob", path_glob]
         args.append(".")
-        proc = await asyncio.create_subprocess_exec(*args, cwd=root, stdout=asyncio.subprocess.PIPE,
-                                                    stderr=asyncio.subprocess.PIPE)
+        proc = await asyncio.create_subprocess_exec(
+            *args, cwd=root, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
         try:
             out, err = await asyncio.wait_for(proc.communicate(), GREP_TIMEOUT)
         except TimeoutError as exc:
@@ -141,14 +149,23 @@ class CodebaseTools:
             if ev.get("type") != "match":
                 continue
             d = ev["data"]
-            matches.append({"path": d["path"]["text"].removeprefix("./"), "line": d["line_number"],
-                            "text": d["lines"].get("text", "").rstrip()[:300]})
+            matches.append(
+                {
+                    "path": d["path"]["text"].removeprefix("./"),
+                    "line": d["line_number"],
+                    "text": d["lines"].get("text", "").rstrip()[:300],
+                }
+            )
         url = f"https://github.com/{repo}/search?q={pattern}"
-        return ToolOutput({"repo": repo, "sha": sha, "matches": matches[:MAX_MATCHES], "count": len(matches)},
-                          url, len(matches) > MAX_MATCHES)
+        return ToolOutput(
+            {"repo": repo, "sha": sha, "matches": matches[:MAX_MATCHES], "count": len(matches)},
+            url,
+            len(matches) > MAX_MATCHES,
+        )
 
-    async def read_file(self, path: str, sha: str, repo: str | None = None,
-                        start_line: int = 1, end_line: int | None = None) -> ToolOutput:
+    async def read_file(
+        self, path: str, sha: str, repo: str | None = None, start_line: int = 1, end_line: int | None = None
+    ) -> ToolOutput:
         repo = self._repo(repo)
         if path.startswith("/") or ".." in Path(path).parts:
             raise ToolError("invalid_arguments", "path must be relative to the repository root, without ..")
@@ -162,23 +179,58 @@ class CodebaseTools:
         start = max(1, start_line)
         end = min(len(lines), end_line or start + MAX_LINES - 1, start + MAX_LINES - 1)
         body = "\n".join(f"{i}: {lines[i - 1]}" for i in range(start, end + 1))
-        return ToolOutput({"repo": repo, "sha": sha, "path": path, "start_line": start, "end_line": end,
-                           "total_lines": len(lines), "content": body},
-                          f"https://github.com/{repo}/blob/{sha}/{path}#L{start}-L{end}",
-                          end < len(lines) and (end_line is None or end < end_line))
+        return ToolOutput(
+            {
+                "repo": repo,
+                "sha": sha,
+                "path": path,
+                "start_line": start,
+                "end_line": end,
+                "total_lines": len(lines),
+                "content": body,
+            },
+            f"https://github.com/{repo}/blob/{sha}/{path}#L{start}-L{end}",
+            end < len(lines) and (end_line is None or end < end_line),
+        )
 
     def tools(self) -> list[Tool]:
         repo = {"type": "string", "description": "repository; optional when only one is allowed"}
         sha = {"type": "string", "description": "the deployed commit from resolve_deployed_sha"}
         return [
-            Tool("grep_code", "Search the code at one commit with a regular expression (ripgrep). At most "
-                 "50 matches. Runbooks in Markdown are searchable too.",
-                 {"type": "object", "properties": {"pattern": {"type": "string", "maxLength": 300}, "sha": sha,
-                                                   "repo": repo, "path_glob": {"type": "string"}},
-                  "required": ["pattern", "sha"]}, "codebase", self.grep_code, 60),
-            Tool("read_file", "Read at most 400 lines of one file at one commit, with line numbers.",
-                 {"type": "object", "properties": {"path": {"type": "string"}, "sha": sha, "repo": repo,
-                                                   "start_line": {"type": "integer", "minimum": 1},
-                                                   "end_line": {"type": "integer", "minimum": 1}},
-                  "required": ["path", "sha"]}, "codebase", self.read_file, 60),
+            Tool(
+                "grep_code",
+                "Search the code at one commit with a regular expression (ripgrep). At most "
+                "50 matches. Runbooks in Markdown are searchable too.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "pattern": {"type": "string", "maxLength": 300},
+                        "sha": sha,
+                        "repo": repo,
+                        "path_glob": {"type": "string"},
+                    },
+                    "required": ["pattern", "sha"],
+                },
+                "codebase",
+                self.grep_code,
+                60,
+            ),
+            Tool(
+                "read_file",
+                "Read at most 400 lines of one file at one commit, with line numbers.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "sha": sha,
+                        "repo": repo,
+                        "start_line": {"type": "integer", "minimum": 1},
+                        "end_line": {"type": "integer", "minimum": 1},
+                    },
+                    "required": ["path", "sha"],
+                },
+                "codebase",
+                self.read_file,
+                60,
+            ),
         ]

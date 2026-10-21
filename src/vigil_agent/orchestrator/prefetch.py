@@ -40,15 +40,30 @@ def plan(*, alert_name: str, labels: dict, entry: ServiceEntry | None, logs_back
             sel += f', pod="{_escape_label(labels["pod"])}"'
         log_query = sel + "} " + DEFAULT_LOG_FILTER
     runbook = (pack.runbook if pack else None) or (entry.runbook if entry else None)
-    return {"alert_name": alert_name, "metric_queries": metric_queries, "log_query": log_query,
-            "namespaces": namespaces, "service": entry.name if entry else None, "runbook": runbook,
-            "log_index": entry.log_index if entry else None,
-            "dashboards": (pack.dashboards if pack else []) + (entry.dashboards if entry else [])}
+    return {
+        "alert_name": alert_name,
+        "metric_queries": metric_queries,
+        "log_query": log_query,
+        "namespaces": namespaces,
+        "service": entry.name if entry else None,
+        "runbook": runbook,
+        "log_index": entry.log_index if entry else None,
+        "dashboards": (pack.dashboards if pack else []) + (entry.dashboards if entry else []),
+    }
 
 
 async def prefetch(p: dict, call: ToolCall, similar: SimilarFn, evidence: Evidence, budget_seconds: float) -> dict:
-    out: dict = {"metrics": [], "logs": None, "timeline": {}, "events": [], "similar": [], "alert_rule": None,
-                 "runbook": p["runbook"], "dashboards": p["dashboards"], "gaps": []}
+    out: dict = {
+        "metrics": [],
+        "logs": None,
+        "timeline": {},
+        "events": [],
+        "similar": [],
+        "alert_rule": None,
+        "runbook": p["runbook"],
+        "dashboards": p["dashboards"],
+        "gaps": [],
+    }
 
     async def tool(name: str, args: dict) -> dict:
         res = await call(name, args)
@@ -74,8 +89,14 @@ async def prefetch(p: dict, call: ToolCall, similar: SimilarFn, evidence: Eviden
     async def metric(q: str):
         args = {"query": q, "start": "now-1h", "end": "now", "step": "60s"}
         res = await tool("query_range", args)
-        out["metrics"].append({"query": q, "evidence_id": cite("query_range", args, res),
-                               "series": res["data"].get("series", [])[:10], "truncated": res.get("truncated")})
+        out["metrics"].append(
+            {
+                "query": q,
+                "evidence_id": cite("query_range", args, res),
+                "series": res["data"].get("series", [])[:10],
+                "truncated": res.get("truncated"),
+            }
+        )
 
     async def logs():
         args = {"query": p["log_query"], "start": "now-1h", "end": "now", "size": 100}
