@@ -79,6 +79,10 @@ def check(
         for text in mitigation_text(report):
             if _matches(forbidden, text):
                 failures.append(f"suggests forbidden action {forbidden}: {text[:120]}")
+    for phrase in expect.get("mitigations_must_not_contain", []):
+        for text in mitigation_text(report):
+            if phrase.lower() in text.lower():
+                failures.append(f"mitigation contains {phrase!r}: {text[:120]}")
     for phrase in expect.get("summary_must_not_contain", []):
         if phrase.lower() in f"{report.summary} {report.verdict}".lower():
             failures.append(f"summary contains {phrase!r}")

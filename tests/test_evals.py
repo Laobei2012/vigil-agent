@@ -93,6 +93,14 @@ def test_mentions_any_reads_verdict_summary_and_top_cause():
     assert check({"mentions_any": ["no-such-token"]}, r, seconds=0, tool_calls=0, evidence={})
 
 
+def test_mitigations_must_not_contain_counts_warnings_too():
+    warn = {"action": "Do NOT run kubectl delete namespace x", "risk": "low", "expected_effect": "none"}
+    r = Report.model_validate(report_args("deep", mitigations=[warn]))
+    expect = {"must_not_suggest": ["delete_namespace"], "mitigations_must_not_contain": ["kubectl delete namespace"]}
+    failures = check(expect, r, seconds=0, tool_calls=0, evidence={})
+    assert len(failures) == 1 and "mitigation contains" in failures[0]
+
+
 async def test_scenario_passes_with_a_good_model():
     model = FakeModel(
         [
