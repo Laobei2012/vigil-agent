@@ -17,4 +17,9 @@ REPORTS = Counter("vigil_reports_total", "Reports posted by outcome.", ["outcome
 FEEDBACK = Counter("vigil_feedback_total", "Feedback button clicks.", ["rating"])
 INTAKE_EVENTS = Counter("vigil_intake_events_total", "Intake events.", ["source", "result"])
 INVESTIGATIONS_RUNNING = Gauge("vigil_investigations_running", "Investigations on this pod.")
+CONFIG_RELOAD_ERRORS = Gauge(
+    "vigil_config_reload_errors",
+    "1 when the last reload of a config file failed and the old version is in use.",
+    ["file"],
+)
 INTAKE_DEAD = Counter("vigil_intake_dead_letters_total", "Intake events moved to the dead letter.")
