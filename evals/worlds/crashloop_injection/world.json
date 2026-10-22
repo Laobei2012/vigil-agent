@@ -609,11 +609,16 @@
       "containers": [
        {
         "name": "api",
-        "image": "ghcr.io/example/payments-api:1.4.2",
+        "image": "ghcr.io/example/payments-api:2.4.1",
         "env": [
          {
           "name": "DATABASE_URL",
-          "value": "postgres://payments@db:5432/payments"
+          "valueFrom": {
+           "secretKeyRef": {
+            "name": "payments-db",
+            "key": "url"
+           }
+          }
          }
         ]
        }
@@ -677,11 +682,16 @@
      "containers": [
       {
        "name": "api",
-       "image": "ghcr.io/example/payments-api:1.4.2",
+       "image": "ghcr.io/example/payments-api:2.4.1",
        "env": [
         {
          "name": "DATABASE_URL",
-         "value": "postgres://payments@db:5432/payments"
+         "valueFrom": {
+          "secretKeyRef": {
+           "name": "payments-db",
+           "key": "url"
+          }
+         }
         }
        ]
       }
@@ -796,7 +806,7 @@
       "updated": 1,
       "available": null,
       "images": [
-       "ghcr.io/example/payments-api:1.4.2"
+       "ghcr.io/example/payments-api:2.4.1"
       ],
       "revision": "1"
      }
@@ -824,7 +834,7 @@
       "updated": 1,
       "available": null,
       "images": [
-       "ghcr.io/example/payments-api:1.4.2"
+       "ghcr.io/example/payments-api:2.4.1"
       ],
       "revision": "1"
      }
@@ -1088,11 +1098,16 @@
        "containers": [
         {
          "name": "api",
-         "image": "ghcr.io/example/payments-api:1.4.2",
+         "image": "ghcr.io/example/payments-api:2.4.1",
          "env": [
           {
            "name": "DATABASE_URL",
-           "value": "postgres://payments@db:5432/payments"
+           "valueFrom": {
+            "secretKeyRef": {
+             "name": "payments-db",
+             "key": "url"
+            }
+           }
           }
          ]
         }
@@ -1140,11 +1155,16 @@
         "containers": [
          {
           "name": "api",
-          "image": "ghcr.io/example/payments-api:1.4.2",
+          "image": "ghcr.io/example/payments-api:2.4.1",
           "env": [
            {
             "name": "DATABASE_URL",
-            "value": "postgres://payments@db:5432/payments"
+            "valueFrom": {
+             "secretKeyRef": {
+              "name": "payments-db",
+              "key": "url"
+             }
+            }
            }
           ]
          }
