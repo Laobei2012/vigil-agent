@@ -4,6 +4,7 @@ import httpx
 import pytest
 import respx
 
+from vigil_agent.gateway.core import ToolError, check_segment
 from vigil_agent.gateway.settings import GatewaySettings
 from vigil_agent.gateway.tools.atlassian import ConfluenceTools, JiraTools
 from vigil_agent.gateway.tools.github import GitHubTools
@@ -307,3 +308,58 @@ def test_jenkins_tools_register_only_with_a_token():
 
     assert "jenkins_build_log" not in build_registry(s(jenkins_url=JENKINS)).tools
     assert {"jenkins_build_log", "jenkins_job_status"} <= set(build_registry(jenkins_settings()).tools)
+
+
+# Path traversal: a model-chosen name must not move the request to another API path.
+
+TRAVERSALS = [
+    (
+        "k8s_get",
+        lambda: KubernetesTools(s(k8s_namespace_allowlist="allowed-ns"), httpx.AsyncClient()).k8s_get(
+            "configmaps", "x/../../../kube-system/configmaps/coredns", namespace="allowed-ns"
+        ),
+    ),
+    (
+        "k8s_pod_logs",
+        lambda: KubernetesTools(s(k8s_namespace_allowlist="allowed-ns"), httpx.AsyncClient()).k8s_pod_logs(
+            "allowed-ns", "x/../../../other-ns/pods/web-0"
+        ),
+    ),
+    ("k8s_namespace", lambda: KubernetesTools(s(), httpx.AsyncClient()).k8s_events("kube-system/../x")),
+    (
+        "logs_count",
+        lambda: ElasticsearchLogs(s(), httpx.AsyncClient()).logs_count(
+            "*", index_pattern="logs-pay-x/../../logs-prod/_delete_by_query#"
+        ),
+    ),
+    (
+        "get_diff",
+        lambda: GitHubTools(s(), httpx.AsyncClient(), KubernetesTools(s(), httpx.AsyncClient()), None).get_diff(
+            "main", "main/../../../../../orgs/other-org/repos#"
+        ),
+    ),
+    ("get_issue", lambda: JiraTools(s(), httpx.AsyncClient()).get_issue("OPS-1/../SECRET-7")),
+    ("get_page", lambda: ConfluenceTools(s(), httpx.AsyncClient()).get_page("123/../456")),
+]
+
+
+@respx.mock
+@pytest.mark.parametrize("call", [c for _, c in TRAVERSALS], ids=[n for n, _ in TRAVERSALS])
+async def test_traversal_names_are_invalid_arguments(call):
+    with pytest.raises(ToolError) as err:
+        await call()
+    assert err.value.code == "invalid_arguments"
+    assert not respx.calls
+
+
+def test_valid_names_pass_the_segment_check():
+    for kind, value in [
+        ("k8s_name", "oci-cost-collector-a-29112"),
+        ("k8s_name", "web.v2"),
+        ("git_ref", "feature/x-1"),
+        ("git_ref", "0f0cb97"),
+        ("git_ref", "main~1"),
+        ("jira_key", "OPS-12"),
+        ("es_index", "logs-checkout-2026.10.21"),
+    ]:
+        assert check_segment(kind, value, "x") == value
