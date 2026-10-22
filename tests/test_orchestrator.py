@@ -559,14 +559,16 @@ async def test_early_start_held_then_released_by_page(store):
         results = await asyncio.gather(runtime.poll_pending_once(), runtime.poll_pending_once())
     assert sum(results) == 1
     await run_one(runtime, store)
-    inv = await store.get_investigation(1)
+    # The losing concurrent insert also takes a sequence value, so look the ID up.
+    inv_id = (await store.fetchone("SELECT id FROM investigations"))["id"]
+    inv = await store.get_investigation(inv_id)
     assert inv["status"] == "held" and inv["fast_report"] and slack.posts == []
     assert len(model.requests) == 1  # no deep pass while held
     assert await intake.handle(pd_event()) == "early_start_released"
     replies = slack.thread(slack.posts[0]["ts"])
     assert "early start" in json.dumps(replies[0]["blocks"])
     await run_one(runtime, store)
-    assert (await store.get_investigation(1))["step"] == "deep_done"
+    assert (await store.get_investigation(inv_id))["step"] == "deep_done"
     assert sum("First pass" in json.dumps(p["blocks"]) for p in slack.thread(slack.posts[0]["ts"])) == 1
 
 
