@@ -51,6 +51,19 @@ async def test_world_returns_recorded_default_and_no_data():
     assert world.misses == [("b", {})]
 
 
+async def test_world_match_entry_answers_calls_that_contain_its_args():
+    world = World(
+        [
+            {"tool": "k8s_list", "match": {"resource": "pods"}, "response": {"ok": True, "data": "pods"}},
+            {"tool": "k8s_list", "match": {"resource": "services"}, "response": {"ok": True, "data": "svc"}},
+            {"tool": "k8s_list", "args": "*", "response": {"ok": True, "data": "other"}},
+        ]
+    )
+    assert (await world.call("k8s_list", {"resource": "pods", "namespace": "x"}))["data"] == "pods"
+    assert (await world.call("k8s_list", {"resource": "services", "label_selector": "a=b"}))["data"] == "svc"
+    assert (await world.call("k8s_list", {"resource": "nodes"}))["data"] == "other"
+
+
 def test_assertions():
     r = Report.model_validate(good("deep"))
     ev = {"E3": {"title": "search_logs {...}", "url": "https://grafana/x"}}

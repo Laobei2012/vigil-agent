@@ -729,18 +729,6 @@
   }
  },
  {
-  "tool": "k8s_list",
-  "args": "*",
-  "response": {
-   "ok": true,
-   "data": {
-    "resource": "services",
-    "count": 0,
-    "items": []
-   }
-  }
- },
- {
   "tool": "query_instant",
   "args": "*",
   "response": {
@@ -758,6 +746,427 @@
    "ok": false,
    "error": "no running image carries the label org.opencontainers.image.revision",
    "error_code": "not_found"
+  }
+ },
+ {
+  "tool": "k8s_list",
+  "match": {
+   "resource": "pods"
+  },
+  "response": {
+   "ok": true,
+   "data": {
+    "resource": "pods",
+    "count": 1,
+    "items": [
+     {
+      "name": "payments-api",
+      "namespace": "vigil-chaos",
+      "age": "26m",
+      "phase": "Running",
+      "node": "10.0.1.36",
+      "ready": "0/1",
+      "restarts": 4,
+      "reasons": [
+       "CrashLoopBackOff",
+       "Error"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "tool": "k8s_list",
+  "match": {
+   "resource": "deployments"
+  },
+  "response": {
+   "ok": true,
+   "data": {
+    "resource": "deployments",
+    "count": 1,
+    "items": [
+     {
+      "name": "payments-api",
+      "namespace": "vigil-chaos",
+      "age": "26m",
+      "replicas": 1,
+      "ready": 0,
+      "updated": 1,
+      "available": null,
+      "images": [
+       "ghcr.io/example/payments-api:1.4.2"
+      ],
+      "revision": "1"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "tool": "k8s_list",
+  "match": {
+   "resource": "replicasets"
+  },
+  "response": {
+   "ok": true,
+   "data": {
+    "resource": "replicasets",
+    "count": 1,
+    "items": [
+     {
+      "name": "payments-api-6c9d8f7b54",
+      "namespace": "vigil-chaos",
+      "age": "26m",
+      "replicas": 1,
+      "ready": 0,
+      "updated": 1,
+      "available": null,
+      "images": [
+       "ghcr.io/example/payments-api:1.4.2"
+      ],
+      "revision": "1"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "tool": "k8s_list",
+  "match": {
+   "resource": "statefulsets"
+  },
+  "response": {
+   "ok": true,
+   "data": {
+    "resource": "statefulsets",
+    "count": 0,
+    "items": []
+   }
+  }
+ },
+ {
+  "tool": "k8s_list",
+  "match": {
+   "resource": "services"
+  },
+  "response": {
+   "ok": true,
+   "data": {
+    "resource": "services",
+    "count": 0,
+    "items": []
+   }
+  }
+ },
+ {
+  "tool": "k8s_list",
+  "match": {
+   "resource": "endpoints"
+  },
+  "response": {
+   "ok": true,
+   "data": {
+    "resource": "endpoints",
+    "count": 0,
+    "items": []
+   }
+  }
+ },
+ {
+  "tool": "k8s_list",
+  "match": {
+   "resource": "persistentvolumeclaims"
+  },
+  "response": {
+   "ok": true,
+   "data": {
+    "resource": "persistentvolumeclaims",
+    "count": 0,
+    "items": []
+   }
+  }
+ },
+ {
+  "tool": "k8s_list",
+  "match": {
+   "resource": "configmaps"
+  },
+  "response": {
+   "ok": true,
+   "data": {
+    "resource": "configmaps",
+    "count": 0,
+    "items": []
+   }
+  }
+ },
+ {
+  "tool": "k8s_list",
+  "match": {
+   "resource": "jobs"
+  },
+  "response": {
+   "ok": true,
+   "data": {
+    "resource": "jobs",
+    "count": 0,
+    "items": []
+   }
+  }
+ },
+ {
+  "tool": "k8s_list",
+  "match": {
+   "resource": "cronjobs"
+  },
+  "response": {
+   "ok": true,
+   "data": {
+    "resource": "cronjobs",
+    "count": 0,
+    "items": []
+   }
+  }
+ },
+ {
+  "tool": "k8s_list",
+  "match": {
+   "resource": "daemonsets"
+  },
+  "response": {
+   "ok": true,
+   "data": {
+    "resource": "daemonsets",
+    "count": 0,
+    "items": []
+   }
+  }
+ },
+ {
+  "tool": "k8s_get",
+  "match": {
+   "resource": "services",
+   "name": "db"
+  },
+  "response": {
+   "ok": false,
+   "error": "not found",
+   "error_code": "not_found"
+  }
+ },
+ {
+  "tool": "k8s_get",
+  "match": {
+   "resource": "statefulsets",
+   "name": "db"
+  },
+  "response": {
+   "ok": false,
+   "error": "not found",
+   "error_code": "not_found"
+  }
+ },
+ {
+  "tool": "k8s_get",
+  "match": {
+   "resource": "deployments",
+   "name": "db"
+  },
+  "response": {
+   "ok": false,
+   "error": "not found",
+   "error_code": "not_found"
+  }
+ },
+ {
+  "tool": "k8s_get",
+  "match": {
+   "resource": "endpoints",
+   "name": "db"
+  },
+  "response": {
+   "ok": false,
+   "error": "not found",
+   "error_code": "not_found"
+  }
+ },
+ {
+  "tool": "k8s_get",
+  "match": {
+   "resource": "pods",
+   "name": "db"
+  },
+  "response": {
+   "ok": false,
+   "error": "not found",
+   "error_code": "not_found"
+  }
+ },
+ {
+  "tool": "k8s_get",
+  "match": {
+   "resource": "persistentvolumeclaims",
+   "name": "db"
+  },
+  "response": {
+   "ok": false,
+   "error": "not found",
+   "error_code": "not_found"
+  }
+ },
+ {
+  "tool": "k8s_describe",
+  "match": {
+   "resource": "services",
+   "name": "db"
+  },
+  "response": {
+   "ok": false,
+   "error": "not found",
+   "error_code": "not_found"
+  }
+ },
+ {
+  "tool": "k8s_describe",
+  "match": {
+   "resource": "statefulsets",
+   "name": "db"
+  },
+  "response": {
+   "ok": false,
+   "error": "not found",
+   "error_code": "not_found"
+  }
+ },
+ {
+  "tool": "k8s_describe",
+  "match": {
+   "resource": "deployments",
+   "name": "db"
+  },
+  "response": {
+   "ok": false,
+   "error": "not found",
+   "error_code": "not_found"
+  }
+ },
+ {
+  "tool": "k8s_describe",
+  "match": {
+   "resource": "pods",
+   "name": "db"
+  },
+  "response": {
+   "ok": false,
+   "error": "not found",
+   "error_code": "not_found"
+  }
+ },
+ {
+  "tool": "k8s_get",
+  "match": {
+   "resource": "deployments",
+   "name": "payments-api"
+  },
+  "response": {
+   "ok": true,
+   "data": {
+    "kind": "Deployment",
+    "metadata": {
+     "name": "payments-api",
+     "namespace": "vigil-chaos",
+     "annotations": {
+      "deployment.kubernetes.io/revision": "1"
+     }
+    },
+    "spec": {
+     "replicas": 1,
+     "template": {
+      "spec": {
+       "containers": [
+        {
+         "name": "api",
+         "image": "ghcr.io/example/payments-api:1.4.2",
+         "env": [
+          {
+           "name": "DATABASE_URL",
+           "value": "postgres://payments@db:5432/payments"
+          }
+         ]
+        }
+       ]
+      }
+     }
+    },
+    "status": {
+     "replicas": 1,
+     "updatedReplicas": 1,
+     "unavailableReplicas": 1,
+     "conditions": [
+      {
+       "type": "Available",
+       "status": "False",
+       "reason": "MinimumReplicasUnavailable"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "tool": "k8s_describe",
+  "match": {
+   "resource": "deployments",
+   "name": "payments-api"
+  },
+  "response": {
+   "ok": true,
+   "data": {
+    "object": {
+     "kind": "Deployment",
+     "metadata": {
+      "name": "payments-api",
+      "namespace": "vigil-chaos",
+      "annotations": {
+       "deployment.kubernetes.io/revision": "1"
+      }
+     },
+     "spec": {
+      "replicas": 1,
+      "template": {
+       "spec": {
+        "containers": [
+         {
+          "name": "api",
+          "image": "ghcr.io/example/payments-api:1.4.2",
+          "env": [
+           {
+            "name": "DATABASE_URL",
+            "value": "postgres://payments@db:5432/payments"
+           }
+          ]
+         }
+        ]
+       }
+      }
+     },
+     "status": {
+      "replicas": 1,
+      "updatedReplicas": 1,
+      "unavailableReplicas": 1,
+      "conditions": [
+       {
+        "type": "Available",
+        "status": "False",
+        "reason": "MinimumReplicasUnavailable"
+       }
+      ]
+     }
+    },
+    "events": []
+   }
   }
  }
 ]
