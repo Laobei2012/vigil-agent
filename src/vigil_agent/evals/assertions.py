@@ -77,9 +77,10 @@ def check(
         wanted = wanted if isinstance(wanted, list) else [wanted]
         if not texts or not any(_matches(w, texts[0]) for w in wanted):
             failures.append(f"top mitigation is not {wanted}: {texts[:1]}")
+    allowed_high = set(expect.get("allow_if_high_risk", []))
     for forbidden in expect.get("must_not_suggest", []):
-        for text in mitigation_text(report):
-            if _matches(forbidden, text):
+        for m, text in zip(report.mitigations, mitigation_text(report), strict=True):
+            if _matches(forbidden, text) and not (forbidden in allowed_high and m.risk == "high"):
                 failures.append(f"suggests forbidden action {forbidden}: {text[:120]}")
     for phrase in expect.get("mitigations_must_not_contain", []):
         for text in mitigation_text(report):

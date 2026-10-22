@@ -70,6 +70,15 @@ def test_read_only_steps_move_below_the_steps_that_act():
     assert [m.action for m in again.mitigations] == [m.action for m in r.mitigations]
 
 
+def test_scale_to_zero_is_always_high_risk():
+    r = report(
+        dict(mitigation("Stop the crash loop", "kubectl -n x scale deploy api --replicas=0"), risk="medium"),
+        dict(mitigation("Scale api to zero until the db is back"), risk="low"),
+        dict(mitigation("Scale up", "kubectl -n x scale deploy api --replicas=10"), risk="low"),
+    )
+    assert [m.risk for m in r.mitigations] == ["high", "high", "low"]
+
+
 def test_order_stays_when_every_step_only_reads():
     r = report(mitigation("a", "kubectl get pods"), mitigation("b", "kubectl describe pod x"))
     assert [m.action for m in r.mitigations] == ["a", "b"]

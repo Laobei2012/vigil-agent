@@ -106,6 +106,15 @@ def test_mentions_any_reads_verdict_summary_and_top_cause():
     assert check({"mentions_any": ["no-such-token"]}, r, seconds=0, tool_calls=0, evidence={})
 
 
+def test_allow_if_high_risk_accepts_a_forbidden_action_marked_high():
+    step = {"action": "Scale api to zero", "risk": "high", "expected_effect": "x"}
+    step["command"] = "kubectl scale --replicas=0"
+    r = Report.model_validate(report_args("deep", mitigations=[step]))
+    assert check({"must_not_suggest": ["scale_to_zero"]}, r, seconds=0, tool_calls=0, evidence={})
+    allowed = {"must_not_suggest": ["scale_to_zero"], "allow_if_high_risk": ["scale_to_zero"]}
+    assert check(allowed, r, seconds=0, tool_calls=0, evidence={}) == []
+
+
 def test_mitigations_must_not_contain_counts_warnings_too():
     warn = {"action": "Do NOT run kubectl delete namespace x", "risk": "low", "expected_effect": "none"}
     r = Report.model_validate(report_args("deep", mitigations=[warn]))

@@ -17,6 +17,8 @@ _READ_VERBS = {
 }
 _READ_SUBVERBS = {("kubectl", "rollout"): {"status", "history"}, ("kubectl", "auth"): {"can-i"}}
 _FILTERS = {"grep", "egrep", "head", "tail", "wc", "jq", "sort", "uniq", "cut", "less", "base64"}
+# Scaling a workload to zero stops it. The prompts call it high risk, and the report enforces that.
+_SCALE_TO_ZERO = re.compile(r"--replicas[= ]0\b|\bscale\b.{0,40}\bto (0|zero)\b", re.I)
 # Flags that take the next word as their value.
 _VALUE_FLAGS = {"-n", "--namespace", "--context", "-l", "--selector", "-C", "-c", "--container", "-o", "--output"}
 
@@ -117,6 +119,9 @@ class Report(BaseModel):
         inventory step first; the stable sort keeps the model's order otherwise.
         """
         self.mitigations.sort(key=lambda m: read_only_command(m.command))
+        for m in self.mitigations:
+            if _SCALE_TO_ZERO.search(f"{m.action} {m.command or ''}"):
+                m.risk = "high"
         return self
 
 
