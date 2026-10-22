@@ -20,6 +20,8 @@ class GatewaySettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="VIGIL_GW_", extra="ignore")
 
     token: str | None = None
+    # Local tests only. Without a token, the gateway refuses to start unless this is true.
+    allow_anonymous: bool = False
     port: int = 8081
     catalog_path: str | None = None
     pii_redaction: bool = False

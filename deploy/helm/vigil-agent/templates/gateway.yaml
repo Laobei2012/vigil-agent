@@ -51,7 +51,8 @@ spec:
             - {name: VIGIL_GW_GITHUB_REPO_ALLOWLIST, value: {{ .Values.gatewayConfig.githubRepoAllowlist | quote }}}
             - {name: VIGIL_GW_GITHUB_TERRAFORM_WORKFLOW, value: {{ .Values.gatewayConfig.githubTerraformWorkflow | quote }}}
             - {name: VIGIL_GW_K8S_NAMESPACE_ALLOWLIST, value: {{ join "," .Values.gateway.namespaceAllowlist | quote }}}
-            {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_GW_TOKEN" "secret" .Values.gatewayTokenSecret "key" "token") | nindent 12 }}
+            - name: VIGIL_GW_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ .Values.gatewayTokenSecret }}, key: token}}
             {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_GW_GITHUB_TOKEN" "secret" .Values.existingSecret "key" "github-token") | nindent 12 }}
             {{- with .Values.gatewayConfig.jenkinsUrl }}
             - {name: VIGIL_GW_JENKINS_URL, value: {{ . | quote }}}

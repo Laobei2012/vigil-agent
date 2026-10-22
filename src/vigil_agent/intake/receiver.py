@@ -1,7 +1,7 @@
 """The webhook receiver. It verifies, enqueues, and returns 2xx in well under a second.
 
 POST /webhooks/pagerduty    PagerDuty V3 webhook, X-PagerDuty-Signature HMAC verified.
-POST /webhooks/alertmanager Alertmanager webhook_configs (in-cluster), optional bearer token.
+POST /webhooks/alertmanager Alertmanager webhook_configs (in-cluster), bearer token. 503 without a token.
 """
 
 from __future__ import annotations
@@ -21,6 +21,9 @@ from vigil_agent.config import Settings
 from vigil_agent.intake.events import IntakeEvent, parse_alertmanager, parse_pd_webhook, verify_pd_signature
 
 log = logging.getLogger("vigil.receiver")
+
+# Webhook bodies are a few KB. The cap applies before the signature test.
+MAX_BODY_BYTES = 1_000_000
 
 
 class Queue(Protocol):
@@ -69,9 +72,11 @@ def create_receiver(settings: Settings, queue: Queue, app: FastAPI | None = None
 
     @app.post("/webhooks/pagerduty")
     async def pagerduty(request: Request):
-        body = await request.body()
         if not settings.pd_secrets:
             return JSONResponse({"error": "PagerDuty intake is not configured"}, status_code=503)
+        body = await _read_body(request)
+        if body is None:
+            return JSONResponse({"error": "body too large"}, status_code=413)
         if not verify_pd_signature(body, request.headers.get("x-pagerduty-signature"), settings.pd_secrets):
             telemetry.INTAKE_EVENTS.labels(source="pagerduty", result="bad_signature").inc()
             return JSONResponse({"error": "invalid signature"}, status_code=401)
@@ -86,15 +91,29 @@ def create_receiver(settings: Settings, queue: Queue, app: FastAPI | None = None
 
     @app.post("/webhooks/alertmanager")
     async def alertmanager(request: Request):
-        if settings.am_webhook_token:
-            got = request.headers.get("authorization", "")
-            if not hmac.compare_digest(got, f"Bearer {settings.am_webhook_token}"):
-                return JSONResponse({"error": "unauthorized"}, status_code=401)
+        if not settings.am_webhook_token:
+            return JSONResponse({"error": "Alertmanager intake is not configured"}, status_code=503)
+        got = request.headers.get("authorization", "")
+        # Compare bytes, because compare_digest raises on a str with non-ASCII characters.
+        if not hmac.compare_digest(got.encode(), f"Bearer {settings.am_webhook_token}".encode()):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        body = await _read_body(request)
+        if body is None:
+            return JSONResponse({"error": "body too large"}, status_code=413)
         try:
-            event = parse_alertmanager(await request.json())
+            event = parse_alertmanager(json.loads(body))
         except (ValueError, KeyError) as exc:
             return JSONResponse({"error": f"bad body: {exc}"}, status_code=400)
         return await _enqueue(event)
+
+    async def _read_body(request: Request) -> bytes | None:
+        """The request body, or None when it is larger than MAX_BODY_BYTES."""
+        body = bytearray()
+        async for chunk in request.stream():
+            body += chunk
+            if len(body) > MAX_BODY_BYTES:
+                return None
+        return bytes(body)
 
     async def _enqueue(event: IntakeEvent):
         try:

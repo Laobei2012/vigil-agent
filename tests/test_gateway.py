@@ -364,6 +364,22 @@ async def test_app_requires_token():
         assert ok.status_code == 200 and any(t["name"] == "query_range" for t in ok.json())
         res = await c.post("/v1/tools/rm_rf", json={"args": {}}, headers={"Authorization": "Bearer t0k"})
         assert res.json()["error_code"] == "unknown_tool"
+        # A non-ASCII header value is a 401, not a 500 from compare_digest.
+        odd = await c.get("/v1/tools", headers={"Authorization": "Bearer t\xf6k".encode("latin-1")})
+        assert odd.status_code == 401
+
+
+def test_app_refuses_to_start_without_a_token():
+    s = settings()
+    with pytest.raises(RuntimeError, match="VIGIL_GW_TOKEN"):
+        create_app(s, build_registry(s))
+
+
+async def test_app_runs_without_a_token_only_with_the_anonymous_flag():
+    s = settings(allow_anonymous=True)
+    app = create_app(s, build_registry(s))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gw") as c:
+        assert (await c.get("/v1/tools")).status_code == 200
 
 
 @respx.mock

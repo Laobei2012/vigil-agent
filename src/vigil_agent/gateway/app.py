@@ -74,6 +74,11 @@ class CallRequest(BaseModel):
 
 def create_app(settings: GatewaySettings | None = None, registry: Registry | None = None) -> FastAPI:
     s = settings or GatewaySettings()
+    if not s.token and not s.allow_anonymous:
+        # Fail closed: a missing Secret key must not open every tool to every pod.
+        raise RuntimeError("VIGIL_GW_TOKEN is empty. Set it, or set VIGIL_GW_ALLOW_ANONYMOUS=true for a local test.")
+    if not s.token:
+        log.warning("the gateway runs without a token, because VIGIL_GW_ALLOW_ANONYMOUS is true")
     reg = registry or build_registry(s)
     app = FastAPI(title="vigil-agent tool gateway")
 
@@ -81,7 +86,8 @@ def create_app(settings: GatewaySettings | None = None, registry: Registry | Non
         if not s.token:
             return
         expected = f"Bearer {s.token}"
-        if not authorization or not hmac.compare_digest(authorization, expected):
+        # Compare bytes, because compare_digest raises on a str with non-ASCII characters.
+        if not authorization or not hmac.compare_digest(authorization.encode(), expected.encode()):
             raise HTTPException(status_code=401, detail="unauthorized")
 
     @app.get("/healthz")

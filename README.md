@@ -35,6 +35,9 @@ The orchestrator reads environment variables with the prefix `VIGIL_` (`src/vigi
 - The model. Set `VIGIL_MODEL_ENABLED=true`. With `VIGIL_MODEL_PROVIDER=bedrock` (the default), give AWS credentials that can call the pinned model. With `VIGIL_MODEL_PROVIDER=anthropic`, give `ANTHROPIC_API_KEY` and, for a compatible endpoint, `ANTHROPIC_BASE_URL`. Without the model, each incident gets the evidence-only reply.
 - Slack. Without `VIGIL_SLACK_BOT_TOKEN`, or with `VIGIL_SLACK_DRY_RUN=true`, messages go to the `slack_outbox` table.
 - PagerDuty. Without `VIGIL_PD_WEBHOOK_SECRETS`, the PagerDuty webhook returns 503. Without `VIGIL_PD_API_KEY`, incidents are routed by the primary-cluster rule.
+- Alertmanager. Without `VIGIL_AM_WEBHOOK_TOKEN`, the Alertmanager webhook returns 503.
+
+The gateway token is not optional. Without `VIGIL_GW_TOKEN`, the gateway stops at start with an error. For a local test only, set `VIGIL_GW_ALLOW_ANONYMOUS=true`.
 
 ## Secrets
 
@@ -53,7 +56,7 @@ You need a secret only for the features that you turn on. PagerDuty is the intak
 | `VIGIL_JENKINS_USER`, `VIGIL_JENKINS_TOKEN` | `jenkins-user`, `jenkins-token` | `VIGIL_GW_JENKINS_USER`, `VIGIL_GW_JENKINS_TOKEN` | Jenkins build status and console logs |
 | `VIGIL_AM_WEBHOOK_TOKEN` | `am-webhook-token` | `VIGIL_AM_WEBHOOK_TOKEN` | A bearer token on the Alertmanager webhook (phase 2) |
 
-The gateway token needs no action. An External Secrets `Password` generator creates it.
+The gateway token needs no action. An External Secrets `Password` generator creates it. Both pods wait until the Secret `vigil-agent-gateway-token` exists.
 
 ### Put a value in OCI Vault
 
@@ -167,7 +170,7 @@ When an alert has the label `jenkins_job`, the pre-fetch reads the console log o
 
 ### Alertmanager webhook token (phase 2)
 
-Phase 2 sends warnings through this webhook. This token is optional. The webhook is reachable only inside the cluster.
+Phase 2 sends warnings through this webhook. Without this token, the webhook returns 503. The webhook is reachable only inside the cluster.
 
 1. Create a value: `openssl rand -hex 32`.
 2. Store it as `VIGIL_AM_WEBHOOK_TOKEN`.
