@@ -2,9 +2,62 @@
 
 from __future__ import annotations
 
+import re
+import shlex
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+# Subcommands that only read. A command whose every part is one of these changes nothing.
+_READ_VERBS = {
+    "kubectl": {"get", "describe", "logs", "top", "events", "explain", "api-resources", "version"},
+    "flux": {"get", "logs", "tree", "stats", "check", "version"},
+    "git": {"log", "show", "diff", "status", "blame", "grep"},
+    "helm": {"list", "ls", "status", "history", "get", "show", "template"},
+}
+_READ_SUBVERBS = {("kubectl", "rollout"): {"status", "history"}, ("kubectl", "auth"): {"can-i"}}
+_FILTERS = {"grep", "egrep", "head", "tail", "wc", "jq", "sort", "uniq", "cut", "less"}
+# Flags that take the next word as their value.
+_VALUE_FLAGS = {"-n", "--namespace", "--context", "-l", "--selector", "-C", "-c", "--container", "-o", "--output"}
+
+
+def _part_reads_only(part: str) -> bool:
+    try:
+        words = shlex.split(part)
+    except ValueError:
+        return False
+    if not words:
+        return True
+    tool = words[0]
+    if tool in _FILTERS:
+        return True
+    if tool not in _READ_VERBS:
+        return False
+    rest, i = [], 1
+    while i < len(words):
+        w = words[i]
+        if w in _VALUE_FLAGS:
+            i += 2
+            continue
+        if not w.startswith("-"):
+            rest.append(w)
+        i += 1
+    if not rest:
+        return False
+    if (tool, rest[0]) in _READ_SUBVERBS:
+        return len(rest) > 1 and rest[1] in _READ_SUBVERBS[(tool, rest[0])]
+    return rest[0] in _READ_VERBS[tool]
+
+
+def read_only_command(command: str | None) -> bool:
+    """True when every part of a shell command only reads. Unknown or empty commands are not read-only."""
+    if not command or not command.strip():
+        return False
+    lines = [line.split(" #")[0] for line in command.splitlines()]
+    parts = [p.strip() for p in re.split(r"&&|\|\||;|\|", "\n".join(lines).replace("\n", ";"))]
+    parts = [p for p in parts if p]
+    return bool(parts) and all(_part_reads_only(p) for p in parts)
+
 
 CATEGORIES = [
     "bad_deploy",
@@ -55,6 +108,16 @@ class Report(BaseModel):
     mitigations: list[Mitigation] = Field(default_factory=list)
     gaps: list[str] = Field(default_factory=list)
     confidence: Literal["high", "medium", "low"]
+
+    @model_validator(mode="after")
+    def _act_before_read(self) -> Report:
+        """A step that only reads is not a mitigation, so it never ranks above one that acts.
+
+        The responder reads the first mitigation first. The model sometimes puts an
+        inventory step first; the stable sort keeps the model's order otherwise.
+        """
+        self.mitigations.sort(key=lambda m: read_only_command(m.command))
+        return self
 
 
 SUBMIT_REPORT_TOOL = {
