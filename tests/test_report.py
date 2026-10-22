@@ -28,6 +28,7 @@ def report(*mitigations):
         "flux get kustomizations -A",
         "git log --oneline -- path/",
         "helm history jenkins -n jenkins",
+        "kubectl -n x get secret db -o jsonpath='{.data.url}' | base64 -d; kubectl -n x get svc,endpoints db",
     ],
 )
 def test_read_only_commands(command):

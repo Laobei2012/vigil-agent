@@ -16,7 +16,7 @@ _READ_VERBS = {
     "helm": {"list", "ls", "status", "history", "get", "show", "template"},
 }
 _READ_SUBVERBS = {("kubectl", "rollout"): {"status", "history"}, ("kubectl", "auth"): {"can-i"}}
-_FILTERS = {"grep", "egrep", "head", "tail", "wc", "jq", "sort", "uniq", "cut", "less"}
+_FILTERS = {"grep", "egrep", "head", "tail", "wc", "jq", "sort", "uniq", "cut", "less", "base64"}
 # Flags that take the next word as their value.
 _VALUE_FLAGS = {"-n", "--namespace", "--context", "-l", "--selector", "-C", "-c", "--container", "-o", "--output"}
 
