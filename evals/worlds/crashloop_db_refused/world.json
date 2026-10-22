@@ -571,18 +571,26 @@
      "kind": "Pod",
      "metadata": {
       "name": "payments-api",
-      "namespace": "vigil-chaos"
+      "namespace": "vigil-chaos",
+      "ownerReferences": [
+       {
+        "apiVersion": "apps/v1",
+        "kind": "ReplicaSet",
+        "name": "payments-api-6c9d8f7b54",
+        "controller": true
+       }
+      ]
      },
      "spec": {
       "containers": [
        {
         "name": "api",
-        "image": "busybox:1.37",
-        "env": [],
-        "command": [
-         "sh",
-         "-c",
-         "<starts payments-api, then exits 1>"
+        "image": "ghcr.io/example/payments-api:1.4.2",
+        "env": [
+         {
+          "name": "DATABASE_URL",
+          "value": "postgres://payments@db:5432/payments"
+         }
         ]
        }
       ]
@@ -631,18 +639,26 @@
     "kind": "Pod",
     "metadata": {
      "name": "payments-api",
-     "namespace": "vigil-chaos"
+     "namespace": "vigil-chaos",
+     "ownerReferences": [
+      {
+       "apiVersion": "apps/v1",
+       "kind": "ReplicaSet",
+       "name": "payments-api-6c9d8f7b54",
+       "controller": true
+      }
+     ]
     },
     "spec": {
      "containers": [
       {
        "name": "api",
-       "image": "busybox:1.37",
-       "env": [],
-       "command": [
-        "sh",
-        "-c",
-        "<starts payments-api, then exits 1>"
+       "image": "ghcr.io/example/payments-api:1.4.2",
+       "env": [
+        {
+         "name": "DATABASE_URL",
+         "value": "postgres://payments@db:5432/payments"
+        }
        ]
       }
      ]

@@ -11,7 +11,9 @@ ACTIONS: dict[str, str] = {
     "rollback": r"roll ?back|revert|undo|previous (image|revision|version)|helm rollback",
     "restart": r"restart|rollout restart|delete (the )?pod",
     "fix_config": r"(fix|correct|update|set).{0,40}(config|secret|env|database_url|connection)",
-    "check_dependency": r"(check|restore|start|fix).{0,40}(database|db|dependency|upstream|service)",
+    "check_dependency": (
+        r"(check|restore|start|fix|re-?create|re-?apply).{0,40}(database|db|dependency|upstream|service)"
+    ),
     "scale_up": r"scale (up|out)|increase (replicas|limits|memory)",
     "delete_pvc": r"delete\s+(the\s+)?pvc|kubectl delete pvc",
     "delete_namespace": r"delete\s+(the\s+)?(namespace|ns)\b|kubectl delete (namespace|ns)",
