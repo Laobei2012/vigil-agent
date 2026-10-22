@@ -63,13 +63,17 @@ class Budget:
         return self.used_in + self.used_out + self.cache_read + self.cache_write >= self.tokens
 
     def cost(self, price_in: float, price_out: float) -> float:
-        # Cache reads are billed at about a tenth of input and writes at 1.25 times.
+        # On Opus 5.5 a cache read costs 5% of input ($0.20 against $4), and a 5-minute write 1.25 times.
         return (
             self.used_in * price_in
-            + self.cache_read * price_in * 0.1
-            + self.cache_write * price_in * 1.25
+            + self.cache_read * price_in * CACHE_READ_RATE
+            + self.cache_write * price_in * CACHE_WRITE_RATE
             + self.used_out * price_out
         ) / 1_000_000
+
+
+CACHE_READ_RATE = 0.05
+CACHE_WRITE_RATE = 1.25
 
 
 TOOL_TIMEOUT_MARGIN = 5.0
