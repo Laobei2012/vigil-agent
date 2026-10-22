@@ -53,18 +53,34 @@ class ClaudeModel:
                     thinking={"type": "adaptive"},
                     output_config={"effort": self.effort},
                 )
-            except (anthropic.RateLimitError, anthropic.InternalServerError, anthropic.APIConnectionError) as exc:
-                if isinstance(exc, anthropic.RateLimitError):
+            except (anthropic.APIConnectionError, anthropic.APIStatusError) as exc:
+                status = getattr(exc, "status_code", None)
+                # A bad key, model ID, or request does not get better with a retry. 529 (overloaded)
+                # is not an InternalServerError in the SDK, so the test is by status code.
+                if status is not None and not (status in RETRY_STATUSES or status >= 500):
+                    raise ModelUnavailable(f"{type(exc).__name__} {status}: {exc.message}"[:500]) from exc
+                if status in (429, 529):
                     telemetry.BEDROCK_THROTTLES.inc()
                 if attempt == self.retries:
                     raise ModelUnavailable(f"{type(exc).__name__}: {exc}") from exc
-                delay = 2 ** (attempt + 1)
-                log.warning("model call failed (%s), retry in %ss", type(exc).__name__, delay)
+                delay = _retry_after(exc) or 2 ** (attempt + 1)
+                log.warning("model call failed (%s %s), retry in %ss", type(exc).__name__, status, delay)
                 await self.sleep(delay)
-            except anthropic.APIStatusError as exc:
-                # A bad key, model ID, or request does not get better with a retry.
-                raise ModelUnavailable(f"{type(exc).__name__} {exc.status_code}: {exc.message}"[:500]) from exc
         raise ModelUnavailable("unreachable")
+
+
+RETRY_STATUSES = (408, 409, 429)
+MAX_RETRY_AFTER = 60.0
+
+
+def _retry_after(exc: Exception) -> float | None:
+    """The retry-after header in seconds, capped at MAX_RETRY_AFTER, or None."""
+    response = getattr(exc, "response", None)
+    try:
+        value = float(response.headers.get("retry-after"))
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return min(max(value, 0.0), MAX_RETRY_AFTER)
 
 
 class BedrockModel(ClaudeModel):

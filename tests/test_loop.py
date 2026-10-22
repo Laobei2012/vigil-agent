@@ -2,6 +2,7 @@ import asyncio
 
 import anthropic
 import httpx
+import pytest
 
 from tests.fakes import FakeModel, msg, report_args, text, thinking, tool_use
 from vigil_agent.agent.loop import Budget, Evidence, LoopLimits, run_loop, wrap_tool_output
@@ -47,6 +48,39 @@ async def test_only_gateway_tools_and_submit_report_are_sent():
     assert names == ["query_range", "k8s_events", "submit_report"]
     assert result.outcome == "report" and result.report.mode == "fast"
     assert model.requests[0]["system"][0]["cache_control"] == {"type": "ephemeral"}
+
+
+async def test_each_tool_waits_for_its_published_timeout(monkeypatch):
+    from vigil_agent.agent import loop
+
+    monkeypatch.setattr(loop, "TOOL_TIMEOUT_MARGIN", 0.0)
+    schemas = [
+        {"name": "query_range", "description": "", "input_schema": {"type": "object"}, "timeout_seconds": 0.5},
+        {"name": "k8s_events", "description": "", "input_schema": {"type": "object"}},
+    ]
+
+    async def slow(name, args):
+        await asyncio.sleep(0.2)
+        return {"ok": True, "data": {}}
+
+    first, second = dict(tool_use("query_range", {}), id="t1"), dict(tool_use("k8s_events", {}), id="t2")
+    model = FakeModel([msg(first, second), msg(tool_use("submit_report", report_args()))])
+    await run_loop(
+        model=model,
+        system="sys",
+        user="alert",
+        tool_schemas=schemas,
+        execute=slow,
+        limits=LoopLimits(max_tool_calls=25, max_seconds=900, tool_timeout=0.1),
+        budget=Budget(tokens=1_000_000),
+        evidence=Evidence(),
+        mode="fast",
+        on_event=lambda kind, payload: asyncio.sleep(0),
+    )
+    results = {r["tool_use_id"]: r for r in model.requests[1]["messages"][-1]["content"]}
+    assert "timed out" not in results["t1"]["content"]
+    assert "timed out" in results["t2"]["content"]
+    assert all("timeout_seconds" not in t for t in model.requests[0]["tools"])
 
 
 async def test_unknown_tool_gets_rejection_and_loop_continues():
@@ -207,6 +241,38 @@ async def test_bedrock_throttle_retries_then_degrades():
     except ModelUnavailable:
         pass
     assert Client.messages.calls == 3 and slept == [2, 4]
+
+
+@pytest.mark.parametrize("status", [529, 408, 409, 500])
+async def test_overloaded_and_transient_statuses_are_retried(status):
+    from vigil_agent.agent.model import AnthropicModel
+
+    req = httpx.Request("POST", "https://api")
+    resp = httpx.Response(status, request=req, headers={"retry-after": "7"})
+    # The SDK picks the error class by status, for example OverloadedError for 529.
+    exc = anthropic.AsyncAnthropic(api_key="x")._make_status_error("busy", body=None, response=resp)
+
+    class Messages:
+        calls = 0
+
+        async def create(self, **kw):
+            Messages.calls += 1
+            if Messages.calls == 1:
+                raise exc
+            return msg(text("ok"))
+
+    class Client:
+        messages = Messages()
+
+    slept = []
+
+    async def sleep(s):
+        slept.append(s)
+
+    out = await AnthropicModel("claude-opus-5-5", client=Client(), sleep=sleep).create(
+        system=[], tools=[], messages=[], max_tokens=1
+    )
+    assert out.content[0].text == "ok" and Messages.calls == 2 and slept == [7]
 
 
 async def test_bedrock_request_shape():

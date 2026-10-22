@@ -27,6 +27,9 @@ from vigil_agent.timeutil import utcnow
 
 log = logging.getLogger("vigil.investigation")
 
+# Time over deep_max_seconds before the deep pass is cancelled, so that a last report can finish.
+DEEP_GRACE_SECONDS = 60.0
+
 
 def load_prompt(name: str, prompts_dir: str | None) -> str:
     if prompts_dir and (Path(prompts_dir) / name).exists():
@@ -181,7 +184,13 @@ class Investigator:
         if inv["step"] == "fast_done" and not inv["resolved"] and await self.model_block_reason(False) is None:
             deep_start = time.monotonic()
             try:
-                result = await self._deep(inv, pre, fast, evidence, budget)
+                # The loop reads the clock only after a tool turn, so one slow model call can run past
+                # deep_max_seconds. The outer deadline frees the slot.
+                result = await asyncio.wait_for(
+                    self._deep(inv, pre, fast, evidence, budget), self.s.deep_max_seconds + DEEP_GRACE_SECONDS
+                )
+            except TimeoutError:
+                result = LoopResult(None, "timeout", detail=f"no report within {self.s.deep_max_seconds:.0f}s")
             except ModelUnavailable as exc:
                 result = LoopResult(None, "error", detail=str(exc))
             await self._charge(inv_id, budget, False)

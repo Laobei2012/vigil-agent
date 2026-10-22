@@ -89,12 +89,16 @@ class Tool:
     fn: Callable[..., Awaitable[ToolOutput]]
     timeout: float | None = None
 
-    def schema(self) -> dict:
-        return {
+    def schema(self, default_timeout: float | None = None) -> dict:
+        out = {
             "name": self.name,
             "description": self.description,
             "input_schema": self.input_schema,
         }
+        # The orchestrator loop reads this and removes it before the schema goes to the model.
+        if self.timeout or default_timeout:
+            out["timeout_seconds"] = self.timeout or default_timeout
+        return out
 
 
 def load_allowlist() -> frozenset[str]:
@@ -134,7 +138,7 @@ class Registry:
         self.tools[tool.name] = tool
 
     def schemas(self) -> list[dict]:
-        return [t.schema() for t in sorted(self.tools.values(), key=lambda t: t.name)]
+        return [t.schema(self.default_timeout) for t in sorted(self.tools.values(), key=lambda t: t.name)]
 
     async def call(self, name: str, args: dict, incident_id: str | None) -> ToolResult:
         started = time.monotonic()

@@ -551,6 +551,24 @@ async def test_fast_pass_missing_report_falls_back_to_evidence(store):
     assert "without a valid report" in json.dumps(first["blocks"])
 
 
+async def test_a_slow_deep_pass_hits_the_outer_deadline(store, monkeypatch):
+    from vigil_agent.orchestrator import investigation
+
+    # deep_max_seconds is 30 in make(). The grace below leaves 0.2 s for the deep pass.
+    monkeypatch.setattr(investigation, "DEEP_GRACE_SECONDS", -29.8)
+
+    async def hang(messages):
+        await asyncio.sleep(30)
+
+    model = FakeModel([msg(tool_use("submit_report", report_args())), hang])
+    _, intake, _, slack, runtime, _ = make(store, model=model)
+    await intake.handle(pd_event())
+    await asyncio.wait_for(run_one(runtime, store), 10)
+    texts = [p["text"] for p in slack.thread(slack.posts[0]["ts"])]
+    assert any("deep pass ended without a report (timeout" in t for t in texts)
+    assert (await store.get_investigation(1))["step"] == "deep_done"
+
+
 async def test_resolve_stops_deep_pass(store):
     _, intake, _, slack, runtime, _ = make(store)
 

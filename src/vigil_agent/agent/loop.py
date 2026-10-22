@@ -72,6 +72,9 @@ class Budget:
         ) / 1_000_000
 
 
+TOOL_TIMEOUT_MARGIN = 5.0
+
+
 @dataclass
 class LoopLimits:
     max_tool_calls: int
@@ -125,7 +128,12 @@ async def run_loop(
     on_event: EventSink,
     should_stop: Callable[[], Awaitable[bool]] | None = None,
 ) -> LoopResult:
-    tools = [t for t in tool_schemas if t["name"] != "submit_report"] + [SUBMIT_REPORT_TOOL]
+    # The gateway publishes each tool's own timeout. The loop waits that long plus a margin, so it
+    # does not cancel a call that the gateway still runs. The model sees only the API fields.
+    timeouts = {t["name"]: t["timeout_seconds"] + TOOL_TIMEOUT_MARGIN for t in tool_schemas if t.get("timeout_seconds")}
+    tools = [
+        {k: v for k, v in t.items() if k != "timeout_seconds"} for t in tool_schemas if t["name"] != "submit_report"
+    ] + [SUBMIT_REPORT_TOOL]
     allowed = {t["name"] for t in tools}
     system_blocks, tools = with_cache_points(system, tools)
     messages: list[dict] = [{"role": "user", "content": user}]
@@ -252,7 +260,7 @@ async def run_loop(
 
         async def run_one(b):
             try:
-                res = await asyncio.wait_for(execute(b.name, dict(b.input)), limits.tool_timeout)
+                res = await asyncio.wait_for(execute(b.name, dict(b.input)), timeouts.get(b.name, limits.tool_timeout))
             except TimeoutError:
                 res = {"ok": False, "error": "tool call timed out", "error_code": "timeout"}
             eid = None
