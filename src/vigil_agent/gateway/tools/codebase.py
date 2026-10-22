@@ -23,7 +23,7 @@ from pathlib import Path
 
 import httpx
 
-from vigil_agent.gateway.core import Tool, ToolError, ToolOutput
+from vigil_agent.gateway.core import Tool, ToolError, ToolOutput, read_capped
 from vigil_agent.gateway.settings import GatewaySettings
 from vigil_agent.gateway.tools.kubernetes import KubernetesTools
 
@@ -33,6 +33,21 @@ MAX_FILE_BYTES = 1_000_000
 GREP_TIMEOUT = 10.0
 KEEP_COMMITS = 5
 _SHA = re.compile(r"^[0-9a-f]{7,40}$")
+
+
+MAX_ARTIFACT_BYTES = 100_000_000
+MAX_ARCHIVE_FILES = 20_000
+MAX_ARCHIVE_BYTES = 500_000_000
+
+
+def _extract(tar: tarfile.TarFile, dest: Path) -> None:
+    """Extract an archive with caps on the file count and the unpacked size."""
+    members = tar.getmembers()
+    if len(members) > MAX_ARCHIVE_FILES:
+        raise ToolError("backend_error", f"the archive has more than {MAX_ARCHIVE_FILES} files")
+    if sum(m.size for m in members) > MAX_ARCHIVE_BYTES:
+        raise ToolError("backend_error", f"the archive unpacks to more than {MAX_ARCHIVE_BYTES // 1_000_000} MB")
+    tar.extractall(dest, members=members, filter="data")
 
 
 class CodebaseTools:
@@ -107,11 +122,13 @@ class CodebaseTools:
             raise ToolError(
                 "revision_unavailable", f"only the revision that Flux holds ({available[:12]}) can be read here"
             )
-        resp = await self.http.get(artifact["url"], timeout=30)
+        resp, body, too_big = await read_capped(self.http, "GET", artifact["url"], MAX_ARTIFACT_BYTES, timeout=30)
         if resp.status_code >= 400:
             raise ToolError("backend_error", f"flux artifact {resp.status_code}")
-        with tarfile.open(fileobj=io.BytesIO(resp.content), mode="r:gz") as tar:
-            tar.extractall(dest, filter="data")
+        if too_big:
+            raise ToolError("backend_error", f"the flux artifact is larger than {MAX_ARTIFACT_BYTES // 1_000_000} MB")
+        with tarfile.open(fileobj=io.BytesIO(body), mode="r:gz") as tar:
+            _extract(tar, dest)
 
     async def _git(self, *args: str, cwd: Path | None = None) -> bytes:
         proc = await asyncio.create_subprocess_exec(
@@ -138,7 +155,7 @@ class CodebaseTools:
             await self._git("fetch", "--filter=blob:none", url, sha, cwd=mirror)
         data = await self._git("archive", "--format=tar", sha, cwd=mirror)
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as tar:
-            tar.extractall(dest, filter="data")
+            _extract(tar, dest)
 
     async def grep_code(
         self, pattern: str, sha: str, repo: str | None = None, path_glob: str | None = None
