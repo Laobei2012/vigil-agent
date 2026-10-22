@@ -85,6 +85,14 @@ def test_assertions():
     assert len(failures) == 2
 
 
+def test_mentions_any_reads_verdict_summary_and_top_cause():
+    r = Report.model_validate(good("deep"))
+    text = f"{r.verdict} {r.summary} {r.hypotheses[0].cause}"
+    word = text.split()[0]
+    assert check({"mentions_any": ["no-such-token", word.upper()]}, r, seconds=0, tool_calls=0, evidence={}) == []
+    assert check({"mentions_any": ["no-such-token"]}, r, seconds=0, tool_calls=0, evidence={})
+
+
 async def test_scenario_passes_with_a_good_model():
     model = FakeModel(
         [

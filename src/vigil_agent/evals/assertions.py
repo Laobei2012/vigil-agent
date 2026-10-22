@@ -58,6 +58,10 @@ def check(
         wanted = wanted if isinstance(wanted, list) else [wanted]
         if top not in wanted:
             failures.append(f"top cause category {top} not in {wanted}")
+    if "mentions_any" in expect:
+        text = " ".join([report.verdict, report.summary] + [h.cause for h in report.hypotheses[:1]]).lower()
+        if not any(token.lower() in text for token in expect["mentions_any"]):
+            failures.append(f"verdict, summary, and top cause mention none of {expect['mentions_any']}")
     if "cites_any" in expect:
         cited = {e for h in report.hypotheses for e in h.evidence_ids}
         haystack = " ".join(
