@@ -23,6 +23,7 @@ from vigil_agent.gateway.settings import GatewaySettings
 from vigil_agent.gateway.tools.atlassian import ConfluenceTools, JiraTools
 from vigil_agent.gateway.tools.codebase import CodebaseTools
 from vigil_agent.gateway.tools.github import GitHubTools
+from vigil_agent.gateway.tools.jenkins import JenkinsTools
 from vigil_agent.gateway.tools.kubernetes import KubernetesTools
 from vigil_agent.gateway.tools.logs import ElasticsearchLogs, LokiLogs
 from vigil_agent.gateway.tools.metrics import MetricsTools
@@ -36,7 +37,7 @@ def build_registry(
 ) -> Registry:
     http = http or httpx.AsyncClient(timeout=30, headers={"User-Agent": "vigil-agent-gateway"})
     catalog = Catalog.load(s.catalog_path) if s.catalog_path else None
-    backends = ("metrics", "logs", "kubernetes", "github", "codebase", "jira", "confluence", "timeline")
+    backends = ("metrics", "logs", "kubernetes", "github", "codebase", "jira", "confluence", "jenkins", "timeline")
     reg = Registry(
         allowlist=load_allowlist(),
         redactor=Redactor(pii=s.pii_redaction),
@@ -57,6 +58,8 @@ def build_registry(
         groups.append(JiraTools(s, http).tools())
     if s.confluence_url:
         groups.append(ConfluenceTools(s, http).tools())
+    if s.jenkins_url and s.jenkins_token:
+        groups.append(JenkinsTools(s, http).tools())
     for group in groups:
         for tool in group:
             reg.register(tool)

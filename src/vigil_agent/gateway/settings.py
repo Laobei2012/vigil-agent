@@ -82,6 +82,13 @@ class GatewaySettings(BaseSettings):
     confluence_token: str | None = None
     confluence_space_allowlist: str = ""
 
+    # Jenkins. Off when the URL or the token is empty. The user needs only Overall/Read and Job/Read.
+    jenkins_url: str | None = None
+    jenkins_public_url: str | None = None
+    jenkins_user: str | None = None
+    jenkins_token: str | None = None
+    jenkins_job_allowlist: str = ""
+
     # Requests per minute for each backend.
     rate_limit_per_minute: int = 60
     rate_limit_burst: int = 20
@@ -109,6 +116,10 @@ class GatewaySettings(BaseSettings):
     @cached_property
     def jira_projects(self) -> list[str]:
         return _csv(self.jira_project_allowlist)
+
+    @cached_property
+    def jenkins_jobs(self) -> list[str]:
+        return _csv(self.jenkins_job_allowlist)
 
     @cached_property
     def confluence_spaces(self) -> list[str]:

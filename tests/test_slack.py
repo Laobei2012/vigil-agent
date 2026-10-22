@@ -190,3 +190,18 @@ async def test_channel_id_is_kept_for_updates():
     client = SlackClient("x", client=Web())
     await client.post("#alertmanager", "t")
     assert client.channel_ids == {"#alertmanager": "C123"}
+
+
+def test_evidence_only_reply_shows_the_failed_build():
+    prefetch = {
+        "jenkins": {
+            "evidence_id": "E1",
+            "job": "tts",
+            "build": 42,
+            "result": "FAILURE",
+            "agent": "win10-gpu",
+            "error_lines": [{"line": 3, "text": "ERROR: NAS share not found"}],
+        }
+    }
+    text = json.dumps(evidence_only_blocks(prefetch, {}, allowed=ALLOWED, reason="r", footer="f"))
+    assert "tts #42 FAILURE on win10-gpu" in text and "line 3" in text and "NAS share not found" in text

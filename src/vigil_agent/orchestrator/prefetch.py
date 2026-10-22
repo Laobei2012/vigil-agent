@@ -48,6 +48,7 @@ def plan(*, alert_name: str, labels: dict, entry: ServiceEntry | None, logs_back
         "service": entry.name if entry else None,
         "runbook": runbook,
         "log_index": entry.log_index if entry else None,
+        "jenkins_job": labels.get("jenkins_job"),
         "dashboards": (pack.dashboards if pack else []) + (entry.dashboards if entry else []),
     }
 
@@ -123,6 +124,11 @@ async def prefetch(p: dict, call: ToolCall, similar: SimilarFn, evidence: Eviden
         eid = cite("k8s_events", args, res)
         out["events"] += [dict(e, evidence_id=eid) for e in res["data"].get("events", [])[:20]]
 
+    async def jenkins():
+        args = {"job": p["jenkins_job"], "build": "lastFailedBuild", "tail_lines": 150}
+        res = await tool("jenkins_build_log", args)
+        out["jenkins"] = {"evidence_id": cite("jenkins_build_log", args, res), **res["data"]}
+
     async def similar_incidents():
         out["similar"] = await similar()
 
@@ -131,6 +137,8 @@ async def prefetch(p: dict, call: ToolCall, similar: SimilarFn, evidence: Eviden
         jobs[f"metric {q[:60]}"] = metric(q)
     if p["log_query"]:
         jobs["logs"] = logs()
+    if p.get("jenkins_job"):
+        jobs["jenkins build log"] = jenkins()
     jobs["timeline"] = timeline()
     for ns in p["namespaces"]:
         jobs[f"events {ns}"] = events(ns)

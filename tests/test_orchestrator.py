@@ -727,3 +727,17 @@ async def test_parent_uses_channel_id_and_a_failed_edit_does_not_fail(store):
     assert (await store.get_investigation(1))["slack_channel"] == "C999"
     await run_one(runtime, store)
     assert (await store.get_investigation(1))["status"] == "done"
+
+
+async def test_prefetch_reads_the_failed_build_of_a_jenkins_alert():
+    from vigil_agent.agent.loop import Evidence
+
+    gw = FakeGateway()
+    p = plan(alert_name="JenkinsJobFailed", labels={"namespace": "jenkins", "jenkins_job": "tts"}, entry=None)
+
+    async def similar():
+        return []
+
+    out = await prefetch(p, lambda n, a: gw.call(n, a, None), similar, Evidence(), budget_seconds=2)
+    assert ("jenkins_build_log", {"job": "tts", "build": "lastFailedBuild", "tail_lines": 150}) in gw.calls
+    assert "jenkins" in out and out["jenkins"]["evidence_id"].startswith("E")

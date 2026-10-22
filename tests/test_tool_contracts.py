@@ -210,3 +210,100 @@ async def test_deployed_sha_without_label_is_a_clear_error():
     gh = GitHubTools(s(codebase_backend="git"), httpx.AsyncClient(), KubernetesTools(s(), httpx.AsyncClient()), None)
     with pytest.raises(Exception, match="org.opencontainers.image.revision"):
         await gh.resolve_deployed_sha(namespace="checkout")
+
+
+JENKINS = "http://jenkins:8080"
+
+
+def jenkins_settings(**kw):
+    return s(
+        jenkins_url=JENKINS,
+        jenkins_public_url="https://jenkins.example",
+        jenkins_user="vigil",
+        jenkins_token="t",
+        jenkins_job_allowlist="tts,folder/*",
+        **kw,
+    )
+
+
+@respx.mock
+async def test_jenkins_build_log_returns_tail_and_error_lines():
+    from vigil_agent.gateway.tools.jenkins import JenkinsTools
+
+    respx.get(f"{JENKINS}/job/tts/lastFailedBuild/api/json").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "number": 42,
+                "result": "FAILURE",
+                "timestamp": 1792600000000,
+                "duration": 65000,
+                "builtOn": "win10-gpu",
+                "actions": [{"causes": [{"shortDescription": "Started by user simon"}]}, {}],
+            },
+        )
+    )
+    log = "\n".join(
+        [
+            "Running on win10-gpu",
+            "C:\\jenkins>tts.bat 20",
+            "ERROR: NAS share \\\\nas\\audio not found",
+            "token=abcdefabcdefabcdef",
+            "Build step 'Execute Windows batch command' marked build as failure",
+            "Finished: FAILURE",
+        ]
+    )
+    route = respx.get(f"{JENKINS}/job/tts/lastFailedBuild/consoleText").mock(return_value=httpx.Response(200, text=log))
+    j = JenkinsTools(jenkins_settings(), httpx.AsyncClient())
+    out = await j.jenkins_build_log("tts", tail_lines=3)
+    assert route.calls[0].request.headers["authorization"].startswith("Basic ")
+    assert (
+        out.data["build"] == 42 and out.data["agent"] == "win10-gpu" and out.data["causes"] == ["Started by user simon"]
+    )
+    assert [e["line"] for e in out.data["error_lines"]] == [3, 5, 6]
+    assert out.data["tail"][-1] == "Finished: FAILURE" and len(out.data["tail"]) == 3 and out.truncated
+    assert out.evidence_url == "https://jenkins.example/job/tts/42/console"
+
+
+async def test_jenkins_refuses_jobs_outside_the_allowlist_and_bad_builds():
+    from vigil_agent.gateway.tools.jenkins import JenkinsTools
+
+    j = JenkinsTools(jenkins_settings(), httpx.AsyncClient())
+    with pytest.raises(Exception, match="allowlist"):
+        await j.jenkins_build_log("deploy-prod")
+    with pytest.raises(Exception, match="job name"):
+        await j.jenkins_build_log("../../script")
+    with pytest.raises(Exception, match="build must be"):
+        await j.jenkins_build_log("tts", build="1/../../script")
+    with pytest.raises(Exception, match="at most"):
+        await j.jenkins_build_log("tts", tail_lines=900)
+
+
+@respx.mock
+async def test_jenkins_job_status_in_a_folder():
+    from vigil_agent.gateway.tools.jenkins import JenkinsTools
+
+    respx.get(f"{JENKINS}/job/folder/job/app/api/json").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "builds": [
+                    {"number": 7, "result": None, "building": True, "timestamp": 1792600000000, "duration": 0},
+                    {"number": 6, "result": "FAILURE", "timestamp": 1792500000000, "duration": 1000, "builtOn": "mac"},
+                ],
+                "lastSuccessfulBuild": {"number": 5},
+                "lastFailedBuild": {"number": 6},
+                "inQueue": False,
+            },
+        )
+    )
+    out = await JenkinsTools(jenkins_settings(), httpx.AsyncClient()).jenkins_job_status("folder/app")
+    assert out.data["builds"][0]["result"] == "BUILDING" and out.data["builds"][1]["agent"] == "mac"
+    assert out.data["last_failed"] == 6 and out.evidence_url == "https://jenkins.example/job/folder/job/app/"
+
+
+def test_jenkins_tools_register_only_with_a_token():
+    from vigil_agent.gateway.app import build_registry
+
+    assert "jenkins_build_log" not in build_registry(s(jenkins_url=JENKINS)).tools
+    assert {"jenkins_build_log", "jenkins_job_status"} <= set(build_registry(jenkins_settings()).tools)

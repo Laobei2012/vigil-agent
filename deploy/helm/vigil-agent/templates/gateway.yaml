@@ -53,6 +53,13 @@ spec:
             - {name: VIGIL_GW_K8S_NAMESPACE_ALLOWLIST, value: {{ join "," .Values.gateway.namespaceAllowlist | quote }}}
             {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_GW_TOKEN" "secret" .Values.gatewayTokenSecret "key" "token") | nindent 12 }}
             {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_GW_GITHUB_TOKEN" "secret" .Values.existingSecret "key" "github-token") | nindent 12 }}
+            {{- with .Values.gatewayConfig.jenkinsUrl }}
+            - {name: VIGIL_GW_JENKINS_URL, value: {{ . | quote }}}
+            - {name: VIGIL_GW_JENKINS_PUBLIC_URL, value: {{ $.Values.gatewayConfig.jenkinsPublicUrl | quote }}}
+            - {name: VIGIL_GW_JENKINS_JOB_ALLOWLIST, value: {{ $.Values.gatewayConfig.jenkinsJobAllowlist | quote }}}
+            {{- end }}
+            {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_GW_JENKINS_USER" "secret" .Values.existingSecret "key" "jenkins-user") | nindent 12 }}
+            {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_GW_JENKINS_TOKEN" "secret" .Values.existingSecret "key" "jenkins-token") | nindent 12 }}
             {{- range $k, $v := .Values.gateway.env }}
             - {name: {{ $k }}, value: {{ $v | quote }}}
             {{- end }}

@@ -226,6 +226,16 @@ def evidence_only_blocks(
             metrics.append(f"    {label or 'value'}: last {_num(last)}, max {_num(x.get('max'))} (1 h)")
     if metrics:
         blocks += _section("*Metrics*\n" + "\n".join(metrics))
+    build = prefetch.get("jenkins") or {}
+    if build:
+        cite = _cite(build["evidence_id"], evidence.get(build["evidence_id"], {}))
+        errs = "\n".join(
+            f"• line {e['line']}: `{s(e['text'])[:240].replace('`', '')}`" for e in build.get("error_lines", [])[-8:]
+        )
+        blocks += _section(
+            f"*Jenkins build* {build.get('job')} #{build.get('build')} {build.get('result')} on "
+            f"{build.get('agent')} ({cite})\n" + (errs or "no error lines found")
+        )
     logs = prefetch.get("logs") or {}
     if logs.get("top_patterns"):
         top = "\n".join(f"• {p['count']}x `{s(p['example'])[:240].replace('`', '')}`" for p in logs["top_patterns"][:5])

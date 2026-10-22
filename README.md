@@ -50,6 +50,7 @@ You need a secret only for the features that you turn on. PagerDuty is the intak
 | `VIGIL_PD_WEBHOOK_SECRET` | `pd-webhook-secrets` | `VIGIL_PD_WEBHOOK_SECRETS` | PagerDuty webhook intake |
 | `VIGIL_PD_API_KEY` | `pd-api-key` | `VIGIL_PD_API_KEY` | Alert labels of PagerDuty incidents |
 | `VIGIL_GITHUB_TOKEN` | `github-token` | `VIGIL_GW_GITHUB_TOKEN` | Commits, PRs, and Terraform runs in the timeline |
+| `VIGIL_JENKINS_USER`, `VIGIL_JENKINS_TOKEN` | `jenkins-user`, `jenkins-token` | `VIGIL_GW_JENKINS_USER`, `VIGIL_GW_JENKINS_TOKEN` | Jenkins build status and console logs |
 | `VIGIL_AM_WEBHOOK_TOKEN` | `am-webhook-token` | `VIGIL_AM_WEBHOOK_TOKEN` | A bearer token on the Alertmanager webhook (phase 2) |
 
 The gateway token needs no action. An External Secrets `Password` generator creates it.
@@ -151,6 +152,18 @@ The bot needs no other scope. It posts only to channels that it is a member of.
 4. Store the token as `VIGIL_GITHUB_TOKEN`.
 
 In production, use a GitHub App with the same read permissions. Its installation tokens expire after one hour.
+
+### Jenkins
+
+The Jenkins tools read build status and console logs. The token must belong to a Jenkins user that has only Overall/Read and Job/Read. Jenkins grants this only with an authorization strategy that has permissions, for example the Matrix Authorization Strategy plugin. With `loggedInUsersCanDoAnything`, each token can start builds and change jobs, so do not use one.
+
+1. Give a dedicated user `vigil` only Overall/Read and Job/Read.
+2. Log in to Jenkins as `vigil` one time, so that Jenkins creates the user.
+3. Open the user page, then Security, then API Token, and click Add new Token.
+4. Store the user name as `VIGIL_JENKINS_USER` and the token as `VIGIL_JENKINS_TOKEN`.
+5. In the HelmRelease values, set `gatewayConfig.jenkinsUrl` (the in-cluster URL), `gatewayConfig.jenkinsPublicUrl` (for evidence links), and `gatewayConfig.jenkinsJobAllowlist`.
+
+When an alert has the label `jenkins_job`, the pre-fetch reads the console log of the last failed build.
 
 ### Alertmanager webhook token (phase 2)
 

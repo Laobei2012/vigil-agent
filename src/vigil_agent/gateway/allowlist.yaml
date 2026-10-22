@@ -29,5 +29,8 @@ tools:
   - get_issue
   - confluence_search
   - get_page
+  # Jenkins build status and console logs.
+  - jenkins_job_status
+  - jenkins_build_log
   # Change timeline.
   - get_change_timeline

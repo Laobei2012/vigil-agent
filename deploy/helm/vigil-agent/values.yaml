@@ -9,7 +9,7 @@ primaryCluster: true
 
 # Secret with optional keys: slack-bot-token, slack-app-token, pd-webhook-secrets,
 # pd-api-key, aws-access-key-id, aws-secret-access-key, anthropic-api-key,
-# anthropic-base-url, github-token.
+# anthropic-base-url, github-token, jenkins-user, jenkins-token.
 # A missing key leaves that feature off.
 existingSecret: vigil-agent
 # Secret with key "token", shared by the orchestrator and the gateway.
@@ -67,6 +67,11 @@ gatewayConfig:
   fluxRepo: Laobei2012/oci-free-cloud-k8s
   githubRepoAllowlist: Laobei2012/oci-free-cloud-k8s
   githubTerraformWorkflow: terraform.yml
+  # Jenkins tools. Off until jenkinsUrl is set and the Secret holds jenkins-token.
+  # The allowlist is comma-separated job globs, for example tts,folder/*.
+  jenkinsUrl: ""
+  jenkinsPublicUrl: ""
+  jenkinsJobAllowlist: ""
 
 # The kill switch. Edit the ConfigMap to stop new work without a deploy.
 flags:
