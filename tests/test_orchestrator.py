@@ -331,6 +331,15 @@ async def test_receiver_rejects_large_bodies(store):
         assert res.status_code == 413
 
 
+def test_alert_fields_are_redacted_at_intake():
+    payload = am_payload()
+    payload["alerts"][0]["annotations"] = {"description": "login failed with password=hunter2fake"}
+    payload["commonAnnotations"] = {"summary": "token=abcdefabcdefabcdef leaked"}
+    event = parse_alertmanager(payload)
+    assert "hunter2fake" not in event.alerts[0].annotations["description"]
+    assert "abcdefabcdefabcdef" not in event.title
+
+
 def test_alertmanager_events_cap_the_alerts_and_the_values():
     payload = am_payload()
     payload["alerts"] = [dict(payload["alerts"][0], fingerprint=str(i)) for i in range(MAX_ALERTS + 50)]

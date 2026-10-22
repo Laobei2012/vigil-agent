@@ -15,6 +15,7 @@ from typing import Protocol
 from slack_sdk.errors import SlackApiError
 from slack_sdk.web.async_client import AsyncWebClient
 
+from vigil_agent.gateway.redaction import Redactor
 from vigil_agent.slack.render import split_messages
 
 log = logging.getLogger("vigil.slack")
@@ -36,6 +37,24 @@ async def post_blocks(
     for i, part in enumerate(split_messages(blocks)):
         out.append(await slack.post(channel, text if i == 0 else f"{text} (part {i + 1})", part, thread_ts))
     return out
+
+
+class RedactingSlack:
+    """Redacts the text and blocks of each message, as a last guard before Slack."""
+
+    def __init__(self, inner: SlackPoster):
+        self.inner = inner
+        self.redactor = Redactor()
+
+    def __getattr__(self, name: str):
+        # channel_ids and other attributes of the wrapped client.
+        return getattr(self.inner, name)
+
+    async def post(self, channel, text, blocks=None, thread_ts=None) -> str:
+        return await self.inner.post(channel, self.redactor.text(text), self.redactor.value(blocks), thread_ts)
+
+    async def update(self, channel, ts, text, blocks=None) -> None:
+        await self.inner.update(channel, ts, self.redactor.text(text), self.redactor.value(blocks))
 
 
 class SlackClient:
