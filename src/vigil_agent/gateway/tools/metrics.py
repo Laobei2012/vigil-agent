@@ -124,7 +124,16 @@ class MetricsTools:
 
     async def series_labels(self, match: str, start: str = "now-1h", end: str = "now") -> ToolOutput:
         t0, t1 = parse_time(start), parse_time(end)
-        data = await self._get("/api/v1/series", {"match[]": match, "start": t0.timestamp(), "end": t1.timestamp()})
+        if (t1 - t0).total_seconds() > self.s.metrics_max_range_days * 86400:
+            raise ToolError("invalid_arguments", f"range is longer than {self.s.metrics_max_range_days} days")
+        # limit stops a broad matcher from returning every series before the cap applies.
+        params = {
+            "match[]": match,
+            "start": t0.timestamp(),
+            "end": t1.timestamp(),
+            "limit": self.s.metrics_max_series + 1,
+        }
+        data = await self._get("/api/v1/series", params)
         series = data if isinstance(data, list) else []
         capped, truncated = self._cap(series)
         return ToolOutput({"series": capped, "count": len(series)}, None, truncated)

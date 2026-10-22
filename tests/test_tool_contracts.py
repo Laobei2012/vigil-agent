@@ -4,7 +4,7 @@ import httpx
 import pytest
 import respx
 
-from vigil_agent.gateway.core import ToolError, check_segment
+from vigil_agent.gateway.core import ToolError, check_segment, read_capped
 from vigil_agent.gateway.settings import GatewaySettings
 from vigil_agent.gateway.tools.atlassian import ConfluenceTools, JiraTools
 from vigil_agent.gateway.tools.github import GitHubTools
@@ -264,6 +264,53 @@ async def test_jenkins_build_log_returns_tail_and_error_lines():
     assert [e["line"] for e in out.data["error_lines"]] == [3, 5, 6]
     assert out.data["tail"][-1] == "Finished: FAILURE" and len(out.data["tail"]) == 3 and out.truncated
     assert out.evidence_url == "https://jenkins.example/job/tts/42/console"
+
+
+@respx.mock
+async def test_read_capped_keeps_the_head_or_the_tail():
+    respx.get("https://big.example/x").mock(return_value=httpx.Response(200, content=b"0123456789" * 100))
+    async with httpx.AsyncClient() as http:
+        _, head, cut = await read_capped(http, "GET", "https://big.example/x", 25)
+        _, tail, cut_tail = await read_capped(http, "GET", "https://big.example/x", 25, tail=True)
+        _, whole, not_cut = await read_capped(http, "GET", "https://big.example/x", 5000)
+    assert head == b"0123456789012345678901234" and cut
+    assert tail == b"5678901234567890123456789" and cut_tail
+    assert len(whole) == 1000 and not not_cut
+
+
+@respx.mock
+async def test_pod_logs_and_series_labels_send_size_limits():
+    from vigil_agent.gateway.tools.kubernetes import LOG_BYTES_PER_LINE
+    from vigil_agent.gateway.tools.metrics import MetricsTools
+
+    logs = respx.get("https://k8s/api/v1/namespaces/ns/pods/p/log").mock(return_value=httpx.Response(200, text="x\n"))
+    await KubernetesTools(s(), httpx.AsyncClient()).k8s_pod_logs("ns", "p", container="c", tail=10)
+    assert logs.calls[0].request.url.params["limitBytes"] == str(10 * LOG_BYTES_PER_LINE)
+    series = respx.get("http://prom/api/v1/series").mock(
+        return_value=httpx.Response(200, json={"status": "success", "data": []})
+    )
+    metrics = MetricsTools(s(metrics_url="http://prom"), httpx.AsyncClient())
+    await metrics.series_labels('{__name__=~".+"}')
+    assert series.calls[0].request.url.params["limit"] == "51"
+    with pytest.raises(ToolError, match="longer than"):
+        await metrics.series_labels("up", start="now-30d")
+
+
+def test_archives_with_too_many_files_are_refused(tmp_path, monkeypatch):
+    import io
+    import tarfile
+
+    from vigil_agent.gateway.tools import codebase
+
+    monkeypatch.setattr(codebase, "MAX_ARCHIVE_FILES", 3)
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        for i in range(5):
+            info = tarfile.TarInfo(f"f{i}.txt")
+            tar.addfile(info, io.BytesIO(b""))
+    buf.seek(0)
+    with tarfile.open(fileobj=buf, mode="r:") as tar, pytest.raises(ToolError, match="more than 3 files"):
+        codebase._extract(tar, tmp_path)
 
 
 async def test_jenkins_refuses_jobs_outside_the_allowlist_and_bad_builds():

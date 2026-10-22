@@ -64,6 +64,7 @@ RESOURCES: dict[str, tuple[str, str, bool]] = {
 DENIED = {"secrets", "pods/exec", "pods/attach", "pods/portforward", "serviceaccounts/token", "secret", "sealedsecrets"}
 MAX_ITEMS = 100
 MAX_TAIL = 500
+LOG_BYTES_PER_LINE = 2048
 
 
 class KubernetesTools:
@@ -195,7 +196,8 @@ class KubernetesTools:
             containers = [c["name"] for c in obj.get("spec", {}).get("containers", [])]
             default = (obj.get("metadata", {}).get("annotations") or {}).get("kubectl.kubernetes.io/default-container")
             container = default if default in containers else (containers[0] if containers else None)
-        params = {"tailLines": tail, "timestamps": "true"}
+        # limitBytes keeps a pod that writes very long lines from returning a huge body.
+        params = {"tailLines": tail, "timestamps": "true", "limitBytes": tail * LOG_BYTES_PER_LINE}
         if container:
             params["container"] = container
         if previous:

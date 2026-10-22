@@ -44,6 +44,24 @@ SEGMENTS = {
 }
 
 
+async def read_capped(client, method: str, url: str, limit: int, *, tail: bool = False, **kwargs):
+    """Stream a response and keep at most limit bytes: the first ones, or the last ones with tail=True.
+
+    Returns (response, body, truncated). Memory stays near limit, however large the body is.
+    """
+    async with client.stream(method, url, **kwargs) as resp:
+        body, truncated = bytearray(), False
+        async for chunk in resp.aiter_bytes():
+            body += chunk
+            if len(body) > limit:
+                truncated = True
+                if not tail:
+                    del body[limit:]
+                    break
+                del body[:-limit]
+    return resp, bytes(body), truncated
+
+
 def check_segment(kind: str, value: str, arg: str) -> str:
     """Return value when it is a valid name of this kind, else raise invalid_arguments."""
     if not isinstance(value, str) or len(value) > 253 or not SEGMENTS[kind].fullmatch(value):
