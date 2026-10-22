@@ -31,6 +31,7 @@ MAX_MATCHES = 50
 MAX_LINES = 400
 MAX_FILE_BYTES = 1_000_000
 GREP_TIMEOUT = 10.0
+KEEP_COMMITS = 5
 _SHA = re.compile(r"^[0-9a-f]{7,40}$")
 
 
@@ -78,7 +79,22 @@ class CodebaseTools:
                 shutil.rmtree(tmp, ignore_errors=True)
                 raise
             tmp.rename(target)
+        self._prune(repo, keep=target)
         return target
+
+    def _prune(self, repo: str, keep: Path) -> None:
+        """Keep the newest KEEP_COMMITS commit directories of a repository.
+
+        The cache is an emptyDir with a size limit, and kubelet evicts the pod when it fills up.
+        """
+        root = self.cache / repo.replace("/", "__")
+        dirs = [d for d in root.iterdir() if d.is_dir() and _SHA.match(d.name)]
+        dirs.sort(key=lambda d: d.stat().st_mtime, reverse=True)
+        for old in dirs[KEEP_COMMITS:]:
+            if old == keep:
+                continue
+            shutil.rmtree(old, ignore_errors=True)
+            self._locks.pop(f"{repo}@{old.name}", None)
 
     async def _fetch_flux(self, sha: str, dest: Path) -> None:
         repo = await self.k8s._get(

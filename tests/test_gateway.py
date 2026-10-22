@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 import shutil
 import subprocess
 
@@ -335,6 +336,25 @@ async def test_read_file_caps_lines(git_repo, tmp_path):
     out = await CodebaseTools(s, httpx.AsyncClient(), None).read_file("big.txt", sha)
     assert out.data["end_line"] - out.data["start_line"] + 1 == 400
     assert out.truncated
+
+
+async def test_code_cache_keeps_the_newest_commits(tmp_path, monkeypatch):
+    from vigil_agent.gateway.tools import codebase
+
+    s = settings(codebase_cache_dir=str(tmp_path / "cache"))
+    code = CodebaseTools(s, httpx.AsyncClient(), None)
+
+    async def fetch(sha, dest):
+        (dest / "f.txt").write_text(sha)
+
+    monkeypatch.setattr(code, "_fetch_flux", fetch)
+    shas = [f"{i:07x}" for i in range(codebase.KEEP_COMMITS + 2)]
+    for i, sha in enumerate(shas):
+        path = await code.checkout(s.flux_repo, sha)
+        os.utime(path, (1000 + i, 1000 + i))
+    root = tmp_path / "cache" / s.flux_repo.replace("/", "__")
+    assert sorted(d.name for d in root.iterdir()) == shas[-codebase.KEEP_COMMITS :]
+    assert len(code._locks) <= codebase.KEEP_COMMITS
 
 
 # App

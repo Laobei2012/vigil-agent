@@ -41,6 +41,13 @@ spec:
           annotations:
             summary: vigil-agent gave up on at least one intake event.
             description: "Run: kubectl -n {{ .Release.Namespace }} logs deploy/{{ .Release.Name }}-orchestrator | grep 'gave up'"
+        - alert: VigilConfigReloadFailed
+          expr: max by (file) (vigil_config_reload_errors) > 0
+          for: 5m
+          labels: {severity: warning, vigil_health: "true"}
+          annotations:
+            summary: "vigil-agent could not parse {{`{{ $labels.file }}`}} and still uses the last good version."
+            description: "Run: kubectl -n {{ .Release.Namespace }} logs deploy/{{ .Release.Name }}-orchestrator | grep 'could not reload'"
         - alert: VigilBedrockThrottled
           expr: increase(vigil_bedrock_throttles_total[15m]) > 5
           labels: {severity: warning, vigil_health: "true"}

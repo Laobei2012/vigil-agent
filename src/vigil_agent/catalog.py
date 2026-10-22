@@ -7,11 +7,16 @@ flags file is a ConfigMap that switches the agent off without a deploy.
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError
+
+from vigil_agent import telemetry
+
+log = logging.getLogger("vigil.catalog")
 
 
 class CatalogError(ValueError):
@@ -128,6 +133,7 @@ class ReloadingFile:
         self._parse = parse
         self._value = default
         self._mtime: float | None = None
+        self._loaded = False
 
     def get(self):
         if not self.path:
@@ -137,8 +143,19 @@ class ReloadingFile:
         except FileNotFoundError:
             return self._value
         if mtime != self._mtime:
-            self._value = self._parse(self.path)
-            self._mtime = mtime
+            try:
+                value = self._parse(self.path)
+            except Exception:
+                # The first read fails fast. After that, a bad ConfigMap edit keeps the last good value,
+                # so one typo cannot stop all intake.
+                if not self._loaded:
+                    raise
+                log.exception("could not reload %s, keeping the last good version", self.path)
+                telemetry.CONFIG_RELOAD_ERRORS.labels(file=os.path.basename(self.path)).set(1)
+                self._mtime = mtime
+                return self._value
+            self._value, self._mtime, self._loaded = value, mtime, True
+            telemetry.CONFIG_RELOAD_ERRORS.labels(file=os.path.basename(self.path)).set(0)
         return self._value
 
 
