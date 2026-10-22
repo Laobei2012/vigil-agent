@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 
 from vigil_agent.catalog import Catalog
-from vigil_agent.gateway.core import Tool, ToolError, ToolOutput, check_segment
+from vigil_agent.gateway.core import Tool, ToolError, ToolOutput
 from vigil_agent.gateway.settings import GatewaySettings
 from vigil_agent.gateway.tools.github import GitHubTools
 from vigil_agent.gateway.tools.kubernetes import KubernetesTools
