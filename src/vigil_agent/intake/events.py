@@ -75,6 +75,30 @@ def parse_pd_webhook(body: dict) -> IntakeEvent | None:
 _LABEL_LINE = re.compile(r"^\s*-\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$")
 
 
+def _firing_lines(firing) -> list[str]:
+    """The "firing" detail as text lines.
+
+    PagerDuty parses Alertmanager's text into {"Labels": [...], "Annotations": [...]},
+    or a list of these for a group. An item is "key = value", or a one-key dict when
+    the value had ": " in it.
+    """
+    if isinstance(firing, str):
+        return firing.splitlines()
+    lines: list[str] = []
+    for block in firing if isinstance(firing, list) else [firing]:
+        if not isinstance(block, dict):
+            continue
+        for section in ("Labels", "Annotations"):
+            lines.append(f"{section}:")
+            for item in block.get(section) or []:
+                if isinstance(item, dict):
+                    lines += [f" - {k}: {v}" for k, v in item.items()]
+                else:
+                    lines.append(f" - {item}")
+        lines.append("Source:")
+    return lines
+
+
 def pd_alert_to_alert(pd_alert: dict) -> Alert:
     """Read the alert labels from a PagerDuty alert's custom details.
 
@@ -92,7 +116,7 @@ def pd_alert_to_alert(pd_alert: dict) -> Alert:
             labels[key] = details[key]
     annotations: dict[str, str] = {}
     section = None
-    for line in str(details.get("firing", "")).splitlines():
+    for line in _firing_lines(details.get("firing", "")):
         stripped = line.strip()
         if stripped in ("Labels:", "Annotations:"):
             section = stripped

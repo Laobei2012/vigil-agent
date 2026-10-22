@@ -200,6 +200,29 @@ def test_pd_alert_labels_from_default_alertmanager_details():
     assert "failed to complete" in alert.annotations["description"]
 
 
+def test_pd_alert_labels_from_structured_firing_details():
+    # PagerDuty parses Alertmanager's "firing" text into lists. A value with ": " becomes a one-key dict.
+    firing = {
+        "Annotations": [
+            {"description = Console log": "https://ci.example.com/job/build-app/lastFailedBuild/console"},
+            "summary = The last build of the Jenkins job build-app failed.",
+        ],
+        "Labels": ["alertname = JenkinsJobFailed", "jenkins_job = build-app", "namespace = jenkins", "pod = ci-0"],
+        "Source": "http://prometheus:9090/graph",
+    }
+    details = {"cluster": "oci-phx", "namespace": "jenkins", "alertname": "JenkinsJobFailed", "firing": firing}
+    alert = pd_alert_to_alert({"body": {"details": details}})
+    assert alert.labels["jenkins_job"] == "build-app" and alert.labels["pod"] == "ci-0"
+    assert alert.labels["cluster"] == "oci-phx"
+    assert (
+        alert.annotations["description"] == "Console log: https://ci.example.com/job/build-app/lastFailedBuild/console"
+    )
+    assert alert.annotations["summary"] == "The last build of the Jenkins job build-app failed."
+    # Several alerts in one group arrive as a list. The first alert's value wins.
+    two = pd_alert_to_alert({"body": {"details": {"firing": [firing, {"Labels": ["pod = ci-1"]}]}}})
+    assert two.labels["pod"] == "ci-0"
+
+
 def test_pd_alert_labels_from_explicit_details():
     alert = pd_alert_to_alert({"body": {"details": {"cluster": "oci-phx", "namespace": "x", "alertname": "A"}}})
     assert alert.labels == {"cluster": "oci-phx", "namespace": "x", "alertname": "A"}
