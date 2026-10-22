@@ -33,15 +33,29 @@ class ModelClient(Protocol):
 class ClaudeModel:
     """One Messages API call with retries. The client decides where the call goes."""
 
-    def __init__(self, model_id: str, client, effort: str = "high", retries: int = 4, sleep=asyncio.sleep):
+    def __init__(
+        self,
+        model_id: str,
+        client,
+        effort: str = "high",
+        retries: int = 4,
+        sleep=asyncio.sleep,
+        cache_conversation: bool = True,
+    ):
         self.model_id = model_id
         self.client = client
         self.effort = effort
         self.retries = retries
         self.sleep = sleep
+        self.cache_conversation = cache_conversation
 
     async def create(self, *, system, tools, messages, max_tokens) -> Message:
         for attempt in range(self.retries + 1):
+            extra = {}
+            if self.cache_conversation:
+                # Automatic caching: a moving breakpoint at the end of the conversation, so each
+                # tool turn reads the earlier turns from the cache. The system breakpoint stays.
+                extra["cache_control"] = {"type": "ephemeral"}
             try:
                 return await self.client.messages.create(
                     model=self.model_id,
@@ -52,7 +66,14 @@ class ClaudeModel:
                     # Opus 5.5 always thinks; effort is the depth control.
                     thinking={"type": "adaptive"},
                     output_config={"effort": self.effort},
+                    **extra,
                 )
+            except anthropic.BadRequestError as exc:
+                if not (self.cache_conversation and "cache_control" in str(exc.message)):
+                    raise ModelUnavailable(f"{type(exc).__name__} 400: {exc.message}"[:500]) from exc
+                # A compatible endpoint can reject the top-level field. Go on without it.
+                log.warning("the model endpoint rejected top-level cache_control, turning it off: %s", exc.message)
+                self.cache_conversation = False
             except (anthropic.APIConnectionError, anthropic.APIStatusError) as exc:
                 status = getattr(exc, "status_code", None)
                 # A bad key, model ID, or request does not get better with a retry. 529 (overloaded)
@@ -103,10 +124,13 @@ class AnthropicModel(ClaudeModel):
 
 def build_model(settings) -> ClaudeModel:
     if settings.model_provider == "anthropic":
-        return AnthropicModel(settings.model_id, settings.model_effort)
-    if settings.model_provider == "bedrock":
-        return BedrockModel(settings.model_id, settings.bedrock_region, settings.model_effort)
-    raise ValueError(f"unknown model provider {settings.model_provider!r}, use bedrock or anthropic")
+        model = AnthropicModel(settings.model_id, settings.model_effort)
+    elif settings.model_provider == "bedrock":
+        model = BedrockModel(settings.model_id, settings.bedrock_region, settings.model_effort)
+    else:
+        raise ValueError(f"unknown model provider {settings.model_provider!r}, use bedrock or anthropic")
+    model.cache_conversation = settings.model_cache_conversation
+    return model
 
 
 def with_cache_points(system_text: str, tools: list[dict]) -> tuple[list[dict], list[dict]]:

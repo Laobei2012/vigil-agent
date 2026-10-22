@@ -291,7 +291,32 @@ async def test_bedrock_request_shape():
     )
     assert seen["model"] == "us.anthropic.claude-opus-5-5"
     assert seen["thinking"] == {"type": "adaptive"} and seen["output_config"] == {"effort": "high"}
+    assert seen["cache_control"] == {"type": "ephemeral"}
     assert "tool_choice" not in seen
+
+
+async def test_an_endpoint_that_rejects_cache_control_gets_requests_without_it():
+    from vigil_agent.agent.model import AnthropicModel
+
+    seen = []
+
+    class Messages:
+        async def create(self, **kw):
+            seen.append(kw)
+            if "cache_control" in kw:
+                req = httpx.Request("POST", "https://compatible")
+                resp = httpx.Response(400, request=req)
+                raise anthropic.BadRequestError("Unknown field: cache_control", response=resp, body=None)
+            return msg(text("ok"))
+
+    class Client:
+        messages = Messages()
+
+    model = AnthropicModel("claude-opus-5-5", client=Client())
+    for _ in range(2):
+        out = await model.create(system=[], tools=[], messages=[], max_tokens=1)
+        assert out.content[0].text == "ok"
+    assert ["cache_control" in kw for kw in seen] == [True, False, False]
 
 
 async def test_non_retryable_api_error_degrades_without_retry():
