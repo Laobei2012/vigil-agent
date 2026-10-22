@@ -456,6 +456,8 @@ async def test_fast_then_deep_pass(store):
     assert inv["status"] == "done" and inv["step"] == "deep_done" and inv["deep_report"]["mode"] == "deep"
     kinds = {r["kind"] for r in await store.fetchall("SELECT kind FROM transcripts")}
     assert {"model_request", "model_response", "tool_call"} <= kinds
+    prefetched = await store.fetchall("SELECT payload FROM transcripts WHERE pass = 'prefetch' AND kind = 'tool_call'")
+    assert prefetched and all({"tool", "args", "result"} <= set(r["payload"]) for r in prefetched)
     assert float(inv["cost_usd"]) > 0
 
 

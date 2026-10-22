@@ -100,7 +100,10 @@ class Investigator:
             p = plan(alert_name=inv["alert_name"], labels=labels, entry=entry)
 
             async def call(name, args):
-                return await self.gateway.call(name, args, ctx.get("incident_id"))
+                res = await self.gateway.call(name, args, ctx.get("incident_id"))
+                # Kept like the model's tool calls, so that a replay world can be built from the transcript.
+                await self._transcript(inv_id, "prefetch", "tool_call", {"tool": name, "args": args, "result": res})
+                return res
 
             async def similar():
                 rows = await self.store.similar(inv["service"], inv["alert_name"], inv_id)
