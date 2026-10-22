@@ -97,9 +97,27 @@ async def test_deep_pass_stops_at_the_tool_cap_then_reports():
 
 
 async def test_tools_after_budget_end_without_report():
-    model = FakeModel([msg(tool_use("query_range", {})), msg(tool_use("query_range", {}))])
-    result, _, _ = await run(model, limits=LoopLimits(max_tool_calls=1, max_seconds=60, tool_timeout=30))
-    assert result.outcome == "no_report"
+    model = FakeModel(
+        [msg(tool_use("query_range", {})), msg(tool_use("query_range", {})), msg(tool_use("query_range", {}))]
+    )
+    result, _, calls = await run(model, limits=LoopLimits(max_tool_calls=1, max_seconds=60, tool_timeout=30))
+    assert result.outcome == "no_report" and len(calls) == 1
+
+
+async def test_a_tool_call_on_the_final_turn_gets_one_more_chance():
+    model = FakeModel(
+        [
+            msg(tool_use("query_range", {})),
+            msg(tool_use("grep_code", {})),
+            msg(tool_use("submit_report", report_args())),
+        ]
+    )
+    result, _, calls = await run(
+        model, limits=LoopLimits(max_tool_calls=1, max_seconds=60, tool_timeout=30, max_tool_turns=1)
+    )
+    assert result.outcome == "report" and len(calls) == 1
+    refused = model.requests[2]["messages"][-1]["content"]
+    assert refused[0]["is_error"] and "budget is used up" in refused[0]["content"]
 
 
 async def test_invalid_report_gets_one_correction():

@@ -132,6 +132,7 @@ async def run_loop(
     started = time.monotonic()
     result = LoopResult(None, "no_report")
     final_turn = False
+    final_nudged = False
     corrected = False
     nudged = False
     tool_turns = 0
@@ -200,8 +201,29 @@ async def run_loop(
             continue
 
         if final_turn:
-            result.outcome, result.detail = "no_report", "the model kept calling tools after the budget ended"
-            return result
+            if final_nudged:
+                result.outcome, result.detail = "no_report", "the model kept calling tools after the budget ended"
+                return result
+            # One more chance: refuse the calls and ask for the report.
+            final_nudged = True
+            refused = [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": b.id,
+                    "is_error": True,
+                    "content": "Not run: the investigation budget is used up.",
+                }
+                for b in uses
+            ]
+            refused.append(
+                {
+                    "type": "text",
+                    "text": "Do not call more tools. Call submit_report now with what you "
+                    "have, and list what is missing under gaps.",
+                }
+            )
+            messages.append({"role": "user", "content": refused})
+            continue
 
         allowed_calls = limits.max_tool_calls - result.tool_calls
         results = []
