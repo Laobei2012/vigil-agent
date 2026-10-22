@@ -48,6 +48,7 @@ class RunResult:
     fast_seconds: float = 0.0
     tool_calls: int = 0
     unrecorded: int = 0
+    reports: dict[str, dict | None] = field(default_factory=dict)
 
 
 @dataclass
@@ -112,16 +113,18 @@ async def run_once(scenario: dict, base: Path, model: ModelClient, settings: Set
         )
     ]
     tool_calls = fast.tool_calls
+    reports = {"fast": fast.report.model_dump() if fast.report else None}
     if "deep_pass" in expect:
         deep = await investigator._deep(inv, pre, fast.report, evidence, budget)
         tool_calls += deep.tool_calls
+        reports["deep"] = deep.report.model_dump() if deep.report else None
         failures += [
             f"deep: {f}"
             for f in check(
                 expect["deep_pass"], deep.report, seconds=0, tool_calls=deep.tool_calls, evidence=evidence.items
             )
         ]
-    return RunResult(not failures, failures, fast_seconds, tool_calls, len(world.misses))
+    return RunResult(not failures, failures, fast_seconds, tool_calls, len(world.misses), reports)
 
 
 async def run_scenario(
@@ -139,6 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("path", help="a scenario file or a directory of scenarios")
     parser.add_argument("--runs", type=int, default=None)
     parser.add_argument("--catalog", default="catalog/services.yaml")
+    parser.add_argument("--dump", help="a directory for the reports of each run, as JSON")
     args = parser.parse_args(argv)
     from vigil_agent.agent.model import build_model
 
@@ -156,6 +160,11 @@ def main(argv: list[str] | None = None) -> int:
             for i, run in enumerate(r.runs):
                 for failure in run.failures:
                     print(f"    run {i + 1}: {failure}")
+            if args.dump:
+                out = Path(args.dump)
+                out.mkdir(parents=True, exist_ok=True)
+                runs = [{"passed": run.passed, "failures": run.failures, "reports": run.reports} for run in r.runs]
+                (out / f"{r.name}.json").write_text(json.dumps(runs, indent=2))
             failed += not r.passed
         return 1 if failed else 0
 
