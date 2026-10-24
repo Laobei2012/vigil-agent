@@ -31,6 +31,12 @@ def plan(*, alert_name: str, labels: dict, entry: ServiceEntry | None, logs_back
     """Decide which queries to run. Pure, so it is easy to test."""
     pack = entry.context_pack(alert_name) if entry else None
     namespace = labels.get("namespace")
+    gaps = []
+    if entry and namespace and namespace not in entry.namespaces:
+        # The label must not move the reads to a namespace that the service does not own.
+        gaps.append(f"alert namespace {namespace} is not a namespace of service {entry.name}; it was not read")
+        namespace = None
+        labels = {k: v for k, v in labels.items() if k != "pod"}
     namespaces = [namespace] if namespace else (entry.namespaces[:2] if entry else [])
     metric_queries = list(pack.metric_queries) if pack else []
     log_query = pack.log_query if pack else None
@@ -50,6 +56,7 @@ def plan(*, alert_name: str, labels: dict, entry: ServiceEntry | None, logs_back
         "log_index": entry.log_index if entry else None,
         "jenkins_job": labels.get("jenkins_job"),
         "dashboards": (pack.dashboards if pack else []) + (entry.dashboards if entry else []),
+        "gaps": gaps,
     }
 
 
@@ -63,7 +70,7 @@ async def prefetch(p: dict, call: ToolCall, similar: SimilarFn, evidence: Eviden
         "alert_rule": None,
         "runbook": p["runbook"],
         "dashboards": p["dashboards"],
-        "gaps": [],
+        "gaps": list(p.get("gaps", [])),
     }
 
     async def tool(name: str, args: dict) -> dict:

@@ -443,6 +443,14 @@ def test_plan_uses_context_pack_and_fallbacks():
     assert u["namespaces"] == [] and u["log_query"] is None
 
 
+def test_plan_ignores_a_namespace_label_outside_the_catalog_entry():
+    entry = Catalog.from_dict(CATALOG).by_name("oci-cost")
+    p = plan(alert_name="Other", labels={"namespace": "payroll-prod", "pod": "p1"}, entry=entry)
+    assert p["namespaces"] == ["oci-cost"]
+    assert p["log_query"] is None or "payroll-prod" not in p["log_query"]
+    assert any("payroll-prod" in g for g in p["gaps"])
+
+
 async def test_prefetch_runs_in_parallel_and_records_gaps():
     from vigil_agent.agent.loop import Evidence
 
