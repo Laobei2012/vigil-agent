@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -28,6 +29,26 @@ class ToolError(Exception):
     def __init__(self, code: str, message: str):
         super().__init__(message)
         self.code = code
+
+
+_DNS_LABEL = r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?"
+# Names that go into a URL path. httpx removes ".." segments and cuts the path at "?" or "#",
+# so a free-form name can move the request to another API path.
+SEGMENTS = {
+    "k8s_name": re.compile(rf"{_DNS_LABEL}(?:\.{_DNS_LABEL})*"),
+    "jira_key": re.compile(r"[A-Z][A-Z0-9_]+-\d+"),
+    "confluence_id": re.compile(r"\d{1,20}"),
+    # An Elasticsearch index name or pattern: lowercase, no "/", ",", "?", or "#".
+    "es_index": re.compile(r"[a-z0-9][a-z0-9._*-]{0,254}"),
+    "git_ref": re.compile(r"(?!.*\.\.)(?!.*//)(?![/.])[A-Za-z0-9._/~^-]{1,255}(?<![/.])"),
+}
+
+
+def check_segment(kind: str, value: str, arg: str) -> str:
+    """Return value when it is a valid name of this kind, else raise invalid_arguments."""
+    if not isinstance(value, str) or len(value) > 253 or not SEGMENTS[kind].fullmatch(value):
+        raise ToolError("invalid_arguments", f"{arg} {value!r} is not a valid {kind.replace('_', ' ')}")
+    return value
 
 
 @dataclass

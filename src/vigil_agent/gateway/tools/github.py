@@ -9,7 +9,7 @@ from datetime import datetime
 import httpx
 
 from vigil_agent.catalog import Catalog
-from vigil_agent.gateway.core import Tool, ToolError, ToolOutput
+from vigil_agent.gateway.core import Tool, ToolError, ToolOutput, check_segment
 from vigil_agent.gateway.settings import GatewaySettings
 from vigil_agent.gateway.tools.kubernetes import KubernetesTools
 from vigil_agent.timeutil import iso, parse_time
@@ -148,6 +148,8 @@ class GitHubTools:
         self, base: str, head: str, repo: str | None = None, path_filter: str | None = None
     ) -> ToolOutput:
         repo = self.repo(repo)
+        check_segment("git_ref", base, "base")
+        check_segment("git_ref", head, "head")
         text = await self._get(f"/repos/{repo}/compare/{base}...{head}", accept="application/vnd.github.diff")
         if path_filter:
             parts = text.split("diff --git ")
@@ -190,6 +192,7 @@ class GitHubTools:
             raise ToolError("invalid_arguments", "unknown service; pass a namespace")
         images: set[str] = set()
         for ns in namespaces:
+            self.k8s._check_ns(ns, True)
             pods = await self.k8s._get(f"/api/v1/namespaces/{ns}/pods", {"limit": 50})
             for p in pods.get("items", []):
                 for c in p.get("status", {}).get("containerStatuses", []) or []:

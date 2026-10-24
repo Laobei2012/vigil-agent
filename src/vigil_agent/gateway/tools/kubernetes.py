@@ -12,7 +12,7 @@ from pathlib import Path
 
 import httpx
 
-from vigil_agent.gateway.core import Tool, ToolError, ToolOutput
+from vigil_agent.gateway.core import Tool, ToolError, ToolOutput, check_segment
 from vigil_agent.gateway.redaction import MASK, SECRET_KEY_PATTERN
 from vigil_agent.gateway.settings import GatewaySettings
 from vigil_agent.timeutil import parse_time, utcnow
@@ -92,6 +92,7 @@ class KubernetesTools:
             return
         if not namespace:
             raise ToolError("invalid_arguments", "namespace is required for this resource")
+        check_segment("k8s_name", namespace, "namespace")
         if self.s.namespaces and namespace not in self.s.namespaces:
             raise ToolError("forbidden", f"namespace {namespace} is not in the allowlist")
 
@@ -99,6 +100,8 @@ class KubernetesTools:
         prefix, plural, namespaced = self._resource(resource)
         self._check_ns(namespace, namespaced)
         ns = f"/namespaces/{namespace}" if namespaced else ""
+        if name:
+            check_segment("k8s_name", name, "name")
         return f"{prefix}{ns}/{plural}" + (f"/{name}" if name else "")
 
     async def _get(self, path: str, params: dict | None = None, text: bool = False):
@@ -184,6 +187,7 @@ class KubernetesTools:
         if tail > MAX_TAIL:
             raise ToolError("invalid_arguments", f"tail must be at most {MAX_TAIL}")
         self._check_ns(namespace, True)
+        check_segment("k8s_name", pod, "pod")
         containers: list[str] = []
         if not container:
             # A pod with several containers needs a name: use the default container, as kubectl does.
