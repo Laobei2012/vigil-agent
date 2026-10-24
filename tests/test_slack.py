@@ -5,7 +5,7 @@ from slack_sdk.errors import SlackApiError
 from slack_sdk.web.async_slack_response import AsyncSlackResponse
 
 from vigil_agent.agent.report import Hypothesis, Mitigation, Report
-from vigil_agent.slack.client import SlackClient, post_blocks
+from vigil_agent.slack.client import RedactingSlack, SlackClient, post_blocks
 from vigil_agent.slack.render import (
     BLOCKS_PER_MESSAGE,
     SECTION_LIMIT,
@@ -190,6 +190,31 @@ async def test_channel_id_is_kept_for_updates():
     client = SlackClient("x", client=Web())
     await client.post("#alertmanager", "t")
     assert client.channel_ids == {"#alertmanager": "C123"}
+
+
+async def test_redacting_slack_masks_text_and_blocks_and_keeps_channel_ids():
+    class Inner:
+        channel_ids = {"#c": "C1"}
+
+        def __init__(self):
+            self.sent = []
+
+        async def post(self, channel, text, blocks=None, thread_ts=None):
+            self.sent.append((text, blocks))
+            return "1.0"
+
+        async def update(self, channel, ts, text, blocks=None):
+            self.sent.append((text, blocks))
+
+    inner = Inner()
+    slack = RedactingSlack(inner)
+    block = {"type": "section", "text": {"type": "mrkdwn", "text": "DB_PASSWORD=hunter2fake"}}
+    await slack.post("#c", "token=abcdefabcdefabcdef", [block])
+    await slack.update("#c", "1.0", "password: correct-horse-battery", None)
+    assert "hunter2fake" not in json.dumps(inner.sent)
+    assert "abcdefabcdefabcdef" not in json.dumps(inner.sent)
+    assert "correct-horse-battery" not in json.dumps(inner.sent)
+    assert slack.channel_ids == {"#c": "C1"}
 
 
 def test_evidence_only_reply_shows_the_failed_build():

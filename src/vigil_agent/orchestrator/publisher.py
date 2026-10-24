@@ -13,7 +13,7 @@ import logging
 from vigil_agent import telemetry
 from vigil_agent.agent.report import Report
 from vigil_agent.config import Settings
-from vigil_agent.slack.client import SlackPoster, post_blocks
+from vigil_agent.slack.client import RedactingSlack, SlackPoster, post_blocks
 from vigil_agent.slack.render import (
     evidence_only_blocks,
     parent_blocks,
@@ -30,7 +30,7 @@ class Publisher:
     def __init__(self, settings: Settings, store: Store, slack: SlackPoster):
         self.s = settings
         self.store = store
-        self.slack = slack
+        self.slack = RedactingSlack(slack)
 
     @property
     def allowed(self) -> list[str]:
