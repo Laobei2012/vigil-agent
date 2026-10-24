@@ -2,7 +2,7 @@
 # The tool allowlist (src/vigil_agent/gateway/allowlist.yaml) is part of this image.
 FROM ghcr.io/astral-sh/uv:0.13.4 AS uv
 
-FROM python:3.12.11-slim-bookworm AS build
+FROM python:3.15.1-slim-bookworm AS build
 COPY --from=uv /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
 WORKDIR /app
@@ -11,7 +11,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY src ./src
 RUN uv sync --frozen --no-dev --no-editable
 
-FROM python:3.12.11-slim-bookworm
+FROM python:3.15.1-slim-bookworm
 ARG REVISION=unknown
 LABEL org.opencontainers.image.source="https://github.com/Laobei2012/vigil-agent" \
       org.opencontainers.image.revision="${REVISION}" \
