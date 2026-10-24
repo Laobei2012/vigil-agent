@@ -28,7 +28,7 @@ jobs:
           --health-retries 15
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@v10.3.2
       - run: sudo apt-get install -y ripgrep
       - run: uv sync --frozen
       - run: uv run ruff check .
