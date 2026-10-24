@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 import pytest
@@ -32,6 +33,23 @@ def test_nested_values_are_masked():
 def test_secret_looking_keys_are_masked_whole():
     out = Redactor().value({"API_KEY": "short", "replicas": "3"})
     assert out == {"API_KEY": MASK, "replicas": "3"}
+
+
+def test_author_keys_are_not_secrets():
+    people = {"author": "alice", "commit_author": "bob", "authority": "ca.example"}
+    assert Redactor().value(people) == people
+    keys = ("auth", "AUTH_TOKEN", "authorization", "Proxy-Authorization", "authorisation", "x_authkey")
+    assert Redactor().value(dict.fromkeys(keys, "s3cret")) == dict.fromkeys(keys, MASK)
+
+
+@pytest.mark.parametrize(
+    "text", ["a" * 200_000, "a1" * 100_000, "http://u:" * 22_000], ids=["letters", "letters_digits", "url_prefix"]
+)
+def test_redaction_time_grows_linearly(text):
+    # The old url_password pattern needed about 9 minutes for 1 MB of letters.
+    start = time.perf_counter()
+    Redactor().text(text)
+    assert time.perf_counter() - start < 1.0
 
 
 def test_ordinary_text_is_unchanged():

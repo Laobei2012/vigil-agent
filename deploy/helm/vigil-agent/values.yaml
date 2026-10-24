@@ -8,11 +8,12 @@ cluster: oci-phx
 primaryCluster: true
 
 # Secret with optional keys: slack-bot-token, slack-app-token, pd-webhook-secrets,
-# pd-api-key, aws-access-key-id, aws-secret-access-key, anthropic-api-key,
-# anthropic-base-url, github-token, jenkins-user, jenkins-token.
+# pd-api-key, am-webhook-token, aws-access-key-id, aws-secret-access-key,
+# anthropic-api-key, anthropic-base-url, github-token, jenkins-user, jenkins-token.
 # A missing key leaves that feature off.
 existingSecret: vigil-agent
-# Secret with key "token", shared by the orchestrator and the gateway.
+# Secret with key "token", shared by the orchestrator and the gateway. Required:
+# the pods do not start without it.
 gatewayTokenSecret: vigil-agent-gateway-token
 # Secret with key "uri" (a PostgreSQL URL). CloudNativePG creates <cluster>-app.
 databaseSecret: vigil-agent-db-app

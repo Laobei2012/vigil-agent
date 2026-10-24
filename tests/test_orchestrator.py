@@ -12,6 +12,8 @@ from tests.fakes import FakeModel, msg, report_args, tool_use
 from vigil_agent.catalog import Catalog, Flags, ReloadingFile
 from vigil_agent.config import Settings
 from vigil_agent.intake.events import (
+    MAX_ALERTS,
+    MAX_VALUE_CHARS,
     Alert,
     IntakeEvent,
     parse_alertmanager,
@@ -19,7 +21,7 @@ from vigil_agent.intake.events import (
     pd_alert_to_alert,
     verify_pd_signature,
 )
-from vigil_agent.intake.receiver import InboxQueue, create_receiver
+from vigil_agent.intake.receiver import MAX_BODY_BYTES, InboxQueue, create_receiver
 from vigil_agent.orchestrator.intake import Intake, route
 from vigil_agent.orchestrator.investigation import Investigator
 from vigil_agent.orchestrator.prefetch import plan, prefetch
@@ -269,7 +271,7 @@ def test_routing():
 
 
 async def test_receiver(store):
-    s = Settings(database_url="unused", pd_webhook_secrets=SECRET)
+    s = Settings(database_url="unused", pd_webhook_secrets=SECRET, am_webhook_token="tok")
     app = create_receiver(s, InboxQueue(store))
     body = (FIX / "pd" / "incident_triggered.json").read_bytes()
     sig = "v1=" + hmac.new(SECRET.encode(), body, hashlib.sha256).hexdigest()
@@ -286,7 +288,8 @@ async def test_receiver(store):
         sig2 = "v1=" + hmac.new(SECRET.encode(), raw, hashlib.sha256).hexdigest()
         ignored = await c.post("/webhooks/pagerduty", content=raw, headers={"X-PagerDuty-Signature": sig2})
         assert ignored.json()["status"] == "ignored"
-        assert (await c.post("/webhooks/alertmanager", json=am_payload())).status_code == 202
+        am = await c.post("/webhooks/alertmanager", json=am_payload(), headers={"Authorization": "Bearer tok"})
+        assert am.status_code == 202
     assert len(await store.fetchall("SELECT * FROM inbox")) == 2
 
 
@@ -295,17 +298,48 @@ async def test_receiver_returns_500_when_enqueue_fails():
         async def put(self, event):
             raise RuntimeError("db down")
 
-    app = create_receiver(Settings(database_url="unused"), Broken())
+    app = create_receiver(Settings(database_url="unused", am_webhook_token="tok"), Broken())
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://r") as c:
-        assert (await c.post("/webhooks/alertmanager", json=am_payload())).status_code == 500
+        res = await c.post("/webhooks/alertmanager", json=am_payload(), headers={"Authorization": "Bearer tok"})
+        assert res.status_code == 500
 
 
 async def test_alertmanager_token(store):
     app = create_receiver(Settings(database_url="unused", am_webhook_token="tok"), InboxQueue(store))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://r") as c:
         assert (await c.post("/webhooks/alertmanager", json=am_payload())).status_code == 401
+        odd = {"Authorization": "Bearer t\xf6k".encode("latin-1")}
+        assert (await c.post("/webhooks/alertmanager", json=am_payload(), headers=odd)).status_code == 401
         ok = await c.post("/webhooks/alertmanager", json=am_payload(), headers={"Authorization": "Bearer tok"})
         assert ok.status_code == 202
+
+
+async def test_alertmanager_route_is_off_without_a_token(store):
+    app = create_receiver(Settings(database_url="unused"), InboxQueue(store))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://r") as c:
+        assert (await c.post("/webhooks/alertmanager", json=am_payload())).status_code == 503
+    assert await store.fetchall("SELECT * FROM inbox") == []
+
+
+async def test_receiver_rejects_large_bodies(store):
+    s = Settings(database_url="unused", pd_webhook_secrets=SECRET, am_webhook_token="tok")
+    app = create_receiver(s, InboxQueue(store))
+    big = b"x" * (MAX_BODY_BYTES + 1)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://r") as c:
+        assert (await c.post("/webhooks/pagerduty", content=big)).status_code == 413
+        res = await c.post("/webhooks/alertmanager", content=big, headers={"Authorization": "Bearer tok"})
+        assert res.status_code == 413
+
+
+def test_alertmanager_events_cap_the_alerts_and_the_values():
+    payload = am_payload()
+    payload["alerts"] = [dict(payload["alerts"][0], fingerprint=str(i)) for i in range(MAX_ALERTS + 50)]
+    payload["alerts"][0] = dict(payload["alerts"][0], annotations={"description": "d" * (MAX_VALUE_CHARS + 1)})
+    payload["commonAnnotations"] = {"summary": "s" * (MAX_VALUE_CHARS + 1)}
+    event = parse_alertmanager(payload)
+    assert len(event.alerts) == MAX_ALERTS
+    assert len(event.alerts[0].annotations["description"]) == MAX_VALUE_CHARS
+    assert len(event.title) == MAX_VALUE_CHARS
 
 
 # Intake

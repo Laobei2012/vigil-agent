@@ -8,10 +8,15 @@ import re
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 EventType = Literal["incident.triggered", "incident.acknowledged", "incident.resolved", "incident.reopened"]
 EVENT_TYPES = ("incident.triggered", "incident.acknowledged", "incident.resolved", "incident.reopened")
+
+# Caps for one event, so that a large group or a long annotation cannot fill the prompt.
+# The PagerDuty client also reads at most 100 alerts.
+MAX_ALERTS = 100
+MAX_VALUE_CHARS = 2000
 
 
 class Alert(BaseModel):
@@ -20,6 +25,11 @@ class Alert(BaseModel):
     status: str = "firing"
     starts_at: str | None = None
     generator_url: str | None = None
+
+    @field_validator("labels", "annotations")
+    @classmethod
+    def _cap_values(cls, values: dict[str, str]) -> dict[str, str]:
+        return {k: v[:MAX_VALUE_CHARS] for k, v in values.items()}
 
 
 class IntakeEvent(BaseModel):
@@ -33,6 +43,11 @@ class IntakeEvent(BaseModel):
     html_url: str | None = None
     occurred_at: datetime | None = None
     alerts: list[Alert] = Field(default_factory=list)
+
+    @field_validator("title")
+    @classmethod
+    def _cap_title(cls, title: str) -> str:
+        return title[:MAX_VALUE_CHARS]
 
     def label(self, name: str) -> str | None:
         for a in self.alerts:
@@ -151,7 +166,7 @@ def parse_alertmanager(body: dict) -> IntakeEvent:
             starts_at=a.get("startsAt"),
             generator_url=a.get("generatorURL"),
         )
-        for a in body.get("alerts", [])
+        for a in body.get("alerts", [])[:MAX_ALERTS]
     ]
     fingerprint = ",".join(
         sorted(f"{a.get('fingerprint')}:{a.get('status')}:{a.get('startsAt')}" for a in body.get("alerts", []))

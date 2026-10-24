@@ -65,7 +65,8 @@ spec:
             - {name: VIGIL_MAX_RUNNING_POD, value: {{ .Values.config.maxRunningPod | quote }}}
             - name: VIGIL_DATABASE_URL
               valueFrom: {secretKeyRef: {name: {{ .Values.databaseSecret }}, key: uri}}
-            {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_GATEWAY_TOKEN" "secret" .Values.gatewayTokenSecret "key" "token") | nindent 12 }}
+            - name: VIGIL_GATEWAY_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ .Values.gatewayTokenSecret }}, key: token}}
             {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_SLACK_BOT_TOKEN" "secret" .Values.existingSecret "key" "slack-bot-token") | nindent 12 }}
             {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_SLACK_APP_TOKEN" "secret" .Values.existingSecret "key" "slack-app-token") | nindent 12 }}
             {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_PD_WEBHOOK_SECRETS" "secret" .Values.existingSecret "key" "pd-webhook-secrets") | nindent 12 }}

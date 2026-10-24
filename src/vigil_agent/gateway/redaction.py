@@ -37,8 +37,13 @@ _SECRET_PATTERNS: list[tuple[str, re.Pattern[str], int]] = [
     ("pagerduty_key", re.compile(r"\bu\+[A-Za-z0-9_-]{18,}"), 0),
     ("bearer", re.compile(r"(?i)(\bbearer\s+)([A-Za-z0-9._~+/=-]{12,})"), 2),
     ("basic_auth", re.compile(r"(?i)(\bbasic\s+)([A-Za-z0-9+/=]{12,})"), 2),
-    # scheme://user:password@host
-    ("url_password", re.compile(r"([a-zA-Z][a-zA-Z0-9+.-]*://[^\s:/@]+:)([^\s@/]+)(@)"), 2),
+    # scheme://user:password@host. The lookbehind and the bounds keep the time linear. Without
+    # them, a long run of letters takes quadratic time, about 9 minutes for 1 MB.
+    (
+        "url_password",
+        re.compile(r"(?<![A-Za-z0-9+.-])([A-Za-z][A-Za-z0-9+.-]{0,31}://[^\s:/@]{1,128}:)([^\s@/]{1,256})(@)"),
+        2,
+    ),
     # key=value or key: value for secret-looking keys.
     (
         "kv_secret",
@@ -56,10 +61,11 @@ _PII_PATTERNS: list[tuple[str, re.Pattern[str], int]] = [
     ("ipv4", re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"), 0),
 ]
 
-# Keys whose values are masked whole, for example in ConfigMap data.
+# Keys whose values are masked whole, for example in ConfigMap data. "auth" skips
+# "author" and "authority", because commit authors are not secrets.
 SECRET_KEY_PATTERN = re.compile(
     r"(?i)(password|passwd|secret|token|api[_-]?key|apikey|access[_-]?key|private[_-]?key|"
-    r"credential|auth|dsn|connection[_-]?string|\.pem$|\.key$)"
+    r"credential|authori[sz]ation|auth(?!or)|dsn|connection[_-]?string|\.pem$|\.key$)"
 )
 
 
