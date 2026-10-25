@@ -331,6 +331,15 @@ async def test_receiver_rejects_large_bodies(store):
         assert res.status_code == 413
 
 
+def test_alert_fields_are_redacted_at_intake():
+    payload = am_payload()
+    payload["alerts"][0]["annotations"] = {"description": "login failed with password=hunter2fake"}
+    payload["commonAnnotations"] = {"summary": "token=abcdefabcdefabcdef leaked"}
+    event = parse_alertmanager(payload)
+    assert "hunter2fake" not in event.alerts[0].annotations["description"]
+    assert "abcdefabcdefabcdef" not in event.title
+
+
 def test_alertmanager_events_cap_the_alerts_and_the_values():
     payload = am_payload()
     payload["alerts"] = [dict(payload["alerts"][0], fingerprint=str(i)) for i in range(MAX_ALERTS + 50)]
@@ -434,6 +443,14 @@ def test_plan_uses_context_pack_and_fallbacks():
     assert u["namespaces"] == [] and u["log_query"] is None
 
 
+def test_plan_ignores_a_namespace_label_outside_the_catalog_entry():
+    entry = Catalog.from_dict(CATALOG).by_name("oci-cost")
+    p = plan(alert_name="Other", labels={"namespace": "payroll-prod", "pod": "p1"}, entry=entry)
+    assert p["namespaces"] == ["oci-cost"]
+    assert p["log_query"] is None or "payroll-prod" not in p["log_query"]
+    assert any("payroll-prod" in g for g in p["gaps"])
+
+
 async def test_prefetch_runs_in_parallel_and_records_gaps():
     from vigil_agent.agent.loop import Evidence
 
@@ -532,6 +549,24 @@ async def test_fast_pass_missing_report_falls_back_to_evidence(store):
     first = slack.thread(slack.posts[0]["ts"])[0]
     assert "Evidence (no model analysis)" in json.dumps(first["blocks"])
     assert "without a valid report" in json.dumps(first["blocks"])
+
+
+async def test_a_slow_deep_pass_hits_the_outer_deadline(store, monkeypatch):
+    from vigil_agent.orchestrator import investigation
+
+    # deep_max_seconds is 30 in make(). The grace below leaves 0.2 s for the deep pass.
+    monkeypatch.setattr(investigation, "DEEP_GRACE_SECONDS", -29.8)
+
+    async def hang(messages):
+        await asyncio.sleep(30)
+
+    model = FakeModel([msg(tool_use("submit_report", report_args())), hang])
+    _, intake, _, slack, runtime, _ = make(store, model=model)
+    await intake.handle(pd_event())
+    await asyncio.wait_for(run_one(runtime, store), 10)
+    texts = [p["text"] for p in slack.thread(slack.posts[0]["ts"])]
+    assert any("deep pass ended without a report (timeout" in t for t in texts)
+    assert (await store.get_investigation(1))["step"] == "deep_done"
 
 
 async def test_resolve_stops_deep_pass(store):

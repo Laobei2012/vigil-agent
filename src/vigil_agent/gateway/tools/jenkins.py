@@ -13,7 +13,7 @@ from urllib.parse import quote
 
 import httpx
 
-from vigil_agent.gateway.core import Tool, ToolError, ToolOutput
+from vigil_agent.gateway.core import Tool, ToolError, ToolOutput, read_capped
 from vigil_agent.gateway.settings import GatewaySettings
 
 MAX_TAIL = 500
@@ -92,9 +92,15 @@ class JenkinsTools:
         info = await self._get(
             f"{path}/api/json", {"tree": "number,result,timestamp,duration,builtOn,actions[causes[shortDescription]]"}
         )
-        text = await self._get(f"{path}/consoleText", text=True)
-        truncated = len(text) > MAX_LOG_BYTES
-        lines = text[-MAX_LOG_BYTES:].splitlines()
+        # Stream the log and keep its last MAX_LOG_BYTES, so a long build log is never in memory whole.
+        resp, body, truncated = await read_capped(
+            self.http, "GET", f"{self.base}{path}/consoleText", MAX_LOG_BYTES, tail=True, auth=self.auth, timeout=25
+        )
+        if resp.status_code == 404:
+            raise ToolError("not_found", f"not found in Jenkins: {path}/consoleText")
+        if resp.status_code >= 400:
+            raise ToolError("backend_error", f"jenkins {resp.status_code}: {body[:200].decode(errors='replace')}")
+        lines = body.decode(errors="replace").splitlines()
         errors = [{"line": i + 1, "text": ln[:400]} for i, ln in enumerate(lines) if _ERROR.search(ln)]
         causes = [
             c.get("shortDescription") for a in info.get("actions", []) or [] if a for c in a.get("causes", []) or []

@@ -9,8 +9,10 @@ primaryCluster: true
 
 # Secret with optional keys: slack-bot-token, slack-app-token, pd-webhook-secrets,
 # pd-api-key, am-webhook-token, aws-access-key-id, aws-secret-access-key,
-# anthropic-api-key, anthropic-base-url, github-token, jenkins-user, jenkins-token.
-# A missing key leaves that feature off.
+# anthropic-api-key, anthropic-base-url, github-token, jenkins-user, jenkins-token,
+# jira-user, jira-token, confluence-user, confluence-token, es-username, es-password.
+# A missing key leaves that feature off. Do not put credentials in gateway.env,
+# because k8s_get on the gateway Deployment returns plain env values.
 existingSecret: vigil-agent
 # Secret with key "token", shared by the orchestrator and the gateway. Required:
 # the pods do not start without it.

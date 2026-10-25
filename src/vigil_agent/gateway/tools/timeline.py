@@ -34,6 +34,8 @@ class TimelineTools:
         repos = entry.repos if entry else self.s.repos
         if not namespaces and not repos:
             raise ToolError("invalid_arguments", "unknown service; pass a namespace")
+        for ns in namespaces:
+            self.k8s._check_ns(ns, True)
         return namespaces, [r for r in repos if r in self.s.repos or not self.s.repos]
 
     async def get_change_timeline(

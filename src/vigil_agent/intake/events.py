@@ -10,6 +10,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from vigil_agent.gateway.redaction import Redactor
+
 EventType = Literal["incident.triggered", "incident.acknowledged", "incident.resolved", "incident.reopened"]
 EVENT_TYPES = ("incident.triggered", "incident.acknowledged", "incident.resolved", "incident.reopened")
 
@@ -17,6 +19,9 @@ EVENT_TYPES = ("incident.triggered", "incident.acknowledged", "incident.resolved
 # The PagerDuty client also reads at most 100 alerts.
 MAX_ALERTS = 100
 MAX_VALUE_CHARS = 2000
+
+# Alert text reaches the prompt and Slack without passing the gateway, so intake redacts it too.
+_REDACTOR = Redactor()
 
 
 class Alert(BaseModel):
@@ -29,7 +34,7 @@ class Alert(BaseModel):
     @field_validator("labels", "annotations")
     @classmethod
     def _cap_values(cls, values: dict[str, str]) -> dict[str, str]:
-        return {k: v[:MAX_VALUE_CHARS] for k, v in values.items()}
+        return _REDACTOR.value({k: v[:MAX_VALUE_CHARS] for k, v in values.items()})
 
 
 class IntakeEvent(BaseModel):
@@ -47,7 +52,7 @@ class IntakeEvent(BaseModel):
     @field_validator("title")
     @classmethod
     def _cap_title(cls, title: str) -> str:
-        return title[:MAX_VALUE_CHARS]
+        return _REDACTOR.text(title[:MAX_VALUE_CHARS])
 
     def label(self, name: str) -> str | None:
         for a in self.alerts:

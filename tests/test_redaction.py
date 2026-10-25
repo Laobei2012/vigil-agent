@@ -35,6 +35,30 @@ def test_secret_looking_keys_are_masked_whole():
     assert out == {"API_KEY": MASK, "replicas": "3"}
 
 
+def test_pod_env_values_and_flag_values_are_masked():
+    container = {
+        "env": [
+            {"name": "DB_PASSWORD", "value": "hunter2real-inline"},
+            {"name": "API_TOKEN", "value": "abc123def456ghi789"},
+            {"name": "LOG_LEVEL", "value": "info"},
+            {"name": "FROM_SECRET", "valueFrom": {"secretKeyRef": {"name": "s", "key": "k"}}},
+        ],
+        "args": ["--token", "tok-0123456789abcdef", "--port", "8080"],
+    }
+    out = Redactor().value(container)
+    assert out["env"][:3] == [
+        {"name": "DB_PASSWORD", "value": MASK},
+        {"name": "API_TOKEN", "value": MASK},
+        {"name": "LOG_LEVEL", "value": "info"},
+    ]
+    assert out["env"][3] == container["env"][3]
+    assert out["args"] == ["--token", MASK, "--port", "8080"]
+
+
+def test_pass_alone_is_a_secret_key_but_bypass_is_not():
+    assert Redactor().value({"DB_PASS": "x", "bypass_cache": "true"}) == {"DB_PASS": MASK, "bypass_cache": "true"}
+
+
 def test_author_keys_are_not_secrets():
     people = {"author": "alice", "commit_author": "bob", "authority": "ca.example"}
     assert Redactor().value(people) == people

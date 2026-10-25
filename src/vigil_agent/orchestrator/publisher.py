@@ -13,8 +13,9 @@ import logging
 from vigil_agent import telemetry
 from vigil_agent.agent.report import Report
 from vigil_agent.config import Settings
-from vigil_agent.slack.client import SlackPoster, post_blocks
+from vigil_agent.slack.client import RedactingSlack, SlackPoster, post_blocks
 from vigil_agent.slack.render import (
+    escape,
     evidence_only_blocks,
     parent_blocks,
     plain_text,
@@ -30,7 +31,7 @@ class Publisher:
     def __init__(self, settings: Settings, store: Store, slack: SlackPoster):
         self.s = settings
         self.store = store
-        self.slack = slack
+        self.slack = RedactingSlack(slack)
 
     @property
     def allowed(self) -> list[str]:
@@ -122,7 +123,9 @@ class Publisher:
             buttons=bool(self.s.slack_app_token),
         )
         ts = (
-            await post_blocks(self.slack, inv["slack_channel"], f"{label}: {report.verdict}", blocks, inv["slack_ts"])
+            await post_blocks(
+                self.slack, inv["slack_channel"], escape(f"{label}: {report.verdict}"), blocks, inv["slack_ts"]
+            )
         )[0]
         telemetry.REPORTS.labels(outcome=report.mode).inc()
         if report.mode == "fast" or inv["reply_ts"] in (None, PENDING):
@@ -162,7 +165,9 @@ class Publisher:
                 ],
             },
         )
-        await self.slack.update(inv["slack_channel"], inv["reply_ts"], f"First pass: {fast.verdict}", blocks[:50])
+        await self.slack.update(
+            inv["slack_channel"], inv["reply_ts"], escape(f"First pass: {fast.verdict}"), blocks[:50]
+        )
 
     async def post_evidence_only(self, inv_id: int, prefetch: dict, evidence: dict, reason: str, footer: str) -> str:
         inv = await self.ensure_parent(inv_id)

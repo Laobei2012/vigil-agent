@@ -61,6 +61,12 @@ spec:
             {{- end }}
             {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_GW_JENKINS_USER" "secret" .Values.existingSecret "key" "jenkins-user") | nindent 12 }}
             {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_GW_JENKINS_TOKEN" "secret" .Values.existingSecret "key" "jenkins-token") | nindent 12 }}
+            {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_GW_JIRA_USER" "secret" .Values.existingSecret "key" "jira-user") | nindent 12 }}
+            {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_GW_JIRA_TOKEN" "secret" .Values.existingSecret "key" "jira-token") | nindent 12 }}
+            {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_GW_CONFLUENCE_USER" "secret" .Values.existingSecret "key" "confluence-user") | nindent 12 }}
+            {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_GW_CONFLUENCE_TOKEN" "secret" .Values.existingSecret "key" "confluence-token") | nindent 12 }}
+            {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_GW_ES_USERNAME" "secret" .Values.existingSecret "key" "es-username") | nindent 12 }}
+            {{- include "vigil.optionalSecretEnv" (dict "env" "VIGIL_GW_ES_PASSWORD" "secret" .Values.existingSecret "key" "es-password") | nindent 12 }}
             {{- range $k, $v := .Values.gateway.env }}
             - {name: {{ $k }}, value: {{ $v | quote }}}
             {{- end }}

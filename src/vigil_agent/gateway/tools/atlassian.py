@@ -9,7 +9,7 @@ import re
 
 import httpx
 
-from vigil_agent.gateway.core import Tool, ToolError, ToolOutput
+from vigil_agent.gateway.core import Tool, ToolError, ToolOutput, check_segment
 from vigil_agent.gateway.settings import GatewaySettings
 
 MAX_JQL = 500
@@ -58,6 +58,7 @@ class JiraTools:
         return ToolOutput({"issues": issues}, f"{self.base}/issues/?jql={query}")
 
     async def get_issue(self, key: str) -> ToolOutput:
+        check_segment("jira_key", key, "key")
         if key.split("-", 1)[0] not in self.s.jira_projects:
             raise ToolError("forbidden", f"project of {key} is not in the allowlist")
         data = await self._get(f"/rest/api/3/issue/{key}", {"expand": "renderedFields"})
@@ -136,6 +137,7 @@ class ConfluenceTools:
         )
 
     async def get_page(self, page_id: str) -> ToolOutput:
+        check_segment("confluence_id", page_id, "page_id")
         data = await self._get(f"/rest/api/content/{page_id}", {"expand": "body.storage,space"})
         space = (data.get("space") or {}).get("key")
         if space not in self.s.confluence_spaces:

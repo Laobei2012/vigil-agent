@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     model_id: str = "us.anthropic.claude-opus-5-5"
     model_effort: str = "high"
     model_max_tokens: int = 16000
+    # Cache the conversation with a moving breakpoint, not only the system prompt.
+    model_cache_conversation: bool = True
     price_input_per_mtok: float = 4.0
     price_output_per_mtok: float = 20.0
 

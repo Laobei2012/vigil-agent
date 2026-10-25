@@ -23,7 +23,7 @@ from pathlib import Path
 
 import httpx
 
-from vigil_agent.gateway.core import Tool, ToolError, ToolOutput
+from vigil_agent.gateway.core import Tool, ToolError, ToolOutput, read_capped
 from vigil_agent.gateway.settings import GatewaySettings
 from vigil_agent.gateway.tools.kubernetes import KubernetesTools
 
@@ -31,7 +31,23 @@ MAX_MATCHES = 50
 MAX_LINES = 400
 MAX_FILE_BYTES = 1_000_000
 GREP_TIMEOUT = 10.0
+KEEP_COMMITS = 5
 _SHA = re.compile(r"^[0-9a-f]{7,40}$")
+
+
+MAX_ARTIFACT_BYTES = 100_000_000
+MAX_ARCHIVE_FILES = 20_000
+MAX_ARCHIVE_BYTES = 500_000_000
+
+
+def _extract(tar: tarfile.TarFile, dest: Path) -> None:
+    """Extract an archive with caps on the file count and the unpacked size."""
+    members = tar.getmembers()
+    if len(members) > MAX_ARCHIVE_FILES:
+        raise ToolError("backend_error", f"the archive has more than {MAX_ARCHIVE_FILES} files")
+    if sum(m.size for m in members) > MAX_ARCHIVE_BYTES:
+        raise ToolError("backend_error", f"the archive unpacks to more than {MAX_ARCHIVE_BYTES // 1_000_000} MB")
+    tar.extractall(dest, members=members, filter="data")
 
 
 class CodebaseTools:
@@ -78,7 +94,22 @@ class CodebaseTools:
                 shutil.rmtree(tmp, ignore_errors=True)
                 raise
             tmp.rename(target)
+        self._prune(repo, keep=target)
         return target
+
+    def _prune(self, repo: str, keep: Path) -> None:
+        """Keep the newest KEEP_COMMITS commit directories of a repository.
+
+        The cache is an emptyDir with a size limit, and kubelet evicts the pod when it fills up.
+        """
+        root = self.cache / repo.replace("/", "__")
+        dirs = [d for d in root.iterdir() if d.is_dir() and _SHA.match(d.name)]
+        dirs.sort(key=lambda d: d.stat().st_mtime, reverse=True)
+        for old in dirs[KEEP_COMMITS:]:
+            if old == keep:
+                continue
+            shutil.rmtree(old, ignore_errors=True)
+            self._locks.pop(f"{repo}@{old.name}", None)
 
     async def _fetch_flux(self, sha: str, dest: Path) -> None:
         repo = await self.k8s._get(
@@ -91,11 +122,13 @@ class CodebaseTools:
             raise ToolError(
                 "revision_unavailable", f"only the revision that Flux holds ({available[:12]}) can be read here"
             )
-        resp = await self.http.get(artifact["url"], timeout=30)
+        resp, body, too_big = await read_capped(self.http, "GET", artifact["url"], MAX_ARTIFACT_BYTES, timeout=30)
         if resp.status_code >= 400:
             raise ToolError("backend_error", f"flux artifact {resp.status_code}")
-        with tarfile.open(fileobj=io.BytesIO(resp.content), mode="r:gz") as tar:
-            tar.extractall(dest, filter="data")
+        if too_big:
+            raise ToolError("backend_error", f"the flux artifact is larger than {MAX_ARTIFACT_BYTES // 1_000_000} MB")
+        with tarfile.open(fileobj=io.BytesIO(body), mode="r:gz") as tar:
+            _extract(tar, dest)
 
     async def _git(self, *args: str, cwd: Path | None = None) -> bytes:
         proc = await asyncio.create_subprocess_exec(
@@ -122,7 +155,7 @@ class CodebaseTools:
             await self._git("fetch", "--filter=blob:none", url, sha, cwd=mirror)
         data = await self._git("archive", "--format=tar", sha, cwd=mirror)
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as tar:
-            tar.extractall(dest, filter="data")
+            _extract(tar, dest)
 
     async def grep_code(
         self, pattern: str, sha: str, repo: str | None = None, path_glob: str | None = None

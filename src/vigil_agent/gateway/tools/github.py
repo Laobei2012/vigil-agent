@@ -9,13 +9,14 @@ from datetime import datetime
 import httpx
 
 from vigil_agent.catalog import Catalog
-from vigil_agent.gateway.core import Tool, ToolError, ToolOutput
+from vigil_agent.gateway.core import Tool, ToolError, ToolOutput, check_segment, read_capped
 from vigil_agent.gateway.settings import GatewaySettings
 from vigil_agent.gateway.tools.kubernetes import KubernetesTools
 from vigil_agent.timeutil import iso, parse_time
 
 MAX_CHANGES = 50
 MAX_DIFF_LINES = 2000
+MAX_DIFF_BYTES = 2_000_000
 REVISION_LABEL = "org.opencontainers.image.revision"
 
 
@@ -148,7 +149,24 @@ class GitHubTools:
         self, base: str, head: str, repo: str | None = None, path_filter: str | None = None
     ) -> ToolOutput:
         repo = self.repo(repo)
-        text = await self._get(f"/repos/{repo}/compare/{base}...{head}", accept="application/vnd.github.diff")
+        check_segment("git_ref", base, "base")
+        check_segment("git_ref", head, "head")
+        if not self.enabled:
+            raise ToolError("not_configured", "GitHub access is not configured in this environment")
+        path = f"/repos/{repo}/compare/{base}...{head}"
+        resp, body, capped = await read_capped(
+            self.http,
+            "GET",
+            f"{self.s.github_api_url}{path}",
+            MAX_DIFF_BYTES,
+            headers=self._headers("application/vnd.github.diff"),
+            timeout=20,
+        )
+        if resp.status_code == 404:
+            raise ToolError("not_found", f"not found: {path}")
+        if resp.status_code >= 400:
+            raise ToolError("backend_error", f"github {resp.status_code}: {body[:300].decode(errors='replace')}")
+        text = body.decode(errors="replace")
         if path_filter:
             parts = text.split("diff --git ")
             keep = [p for p in parts[1:] if fnmatch.fnmatch(p.split(" ", 1)[0].removeprefix("a/"), path_filter)]
@@ -157,7 +175,7 @@ class GitHubTools:
         return ToolOutput(
             {"repo": repo, "base": base, "head": head, "lines": len(lines), "diff": "\n".join(lines[:MAX_DIFF_LINES])},
             f"https://github.com/{repo}/compare/{base}...{head}",
-            len(lines) > MAX_DIFF_LINES,
+            capped or len(lines) > MAX_DIFF_LINES,
         )
 
     async def resolve_deployed_sha(self, service: str | None = None, namespace: str | None = None) -> ToolOutput:
@@ -190,6 +208,7 @@ class GitHubTools:
             raise ToolError("invalid_arguments", "unknown service; pass a namespace")
         images: set[str] = set()
         for ns in namespaces:
+            self.k8s._check_ns(ns, True)
             pods = await self.k8s._get(f"/api/v1/namespaces/{ns}/pods", {"limit": 50})
             for p in pods.get("items", []):
                 for c in p.get("status", {}).get("containerStatuses", []) or []:

@@ -4,6 +4,7 @@ import httpx
 import pytest
 import respx
 
+from vigil_agent.gateway.core import ToolError, check_segment, read_capped
 from vigil_agent.gateway.settings import GatewaySettings
 from vigil_agent.gateway.tools.atlassian import ConfluenceTools, JiraTools
 from vigil_agent.gateway.tools.github import GitHubTools
@@ -265,6 +266,53 @@ async def test_jenkins_build_log_returns_tail_and_error_lines():
     assert out.evidence_url == "https://jenkins.example/job/tts/42/console"
 
 
+@respx.mock
+async def test_read_capped_keeps_the_head_or_the_tail():
+    respx.get("https://big.example/x").mock(return_value=httpx.Response(200, content=b"0123456789" * 100))
+    async with httpx.AsyncClient() as http:
+        _, head, cut = await read_capped(http, "GET", "https://big.example/x", 25)
+        _, tail, cut_tail = await read_capped(http, "GET", "https://big.example/x", 25, tail=True)
+        _, whole, not_cut = await read_capped(http, "GET", "https://big.example/x", 5000)
+    assert head == b"0123456789012345678901234" and cut
+    assert tail == b"5678901234567890123456789" and cut_tail
+    assert len(whole) == 1000 and not not_cut
+
+
+@respx.mock
+async def test_pod_logs_and_series_labels_send_size_limits():
+    from vigil_agent.gateway.tools.kubernetes import LOG_BYTES_PER_LINE
+    from vigil_agent.gateway.tools.metrics import MetricsTools
+
+    logs = respx.get("https://k8s/api/v1/namespaces/ns/pods/p/log").mock(return_value=httpx.Response(200, text="x\n"))
+    await KubernetesTools(s(), httpx.AsyncClient()).k8s_pod_logs("ns", "p", container="c", tail=10)
+    assert logs.calls[0].request.url.params["limitBytes"] == str(10 * LOG_BYTES_PER_LINE)
+    series = respx.get("http://prom/api/v1/series").mock(
+        return_value=httpx.Response(200, json={"status": "success", "data": []})
+    )
+    metrics = MetricsTools(s(metrics_url="http://prom"), httpx.AsyncClient())
+    await metrics.series_labels('{__name__=~".+"}')
+    assert series.calls[0].request.url.params["limit"] == "51"
+    with pytest.raises(ToolError, match="longer than"):
+        await metrics.series_labels("up", start="now-30d")
+
+
+def test_archives_with_too_many_files_are_refused(tmp_path, monkeypatch):
+    import io
+    import tarfile
+
+    from vigil_agent.gateway.tools import codebase
+
+    monkeypatch.setattr(codebase, "MAX_ARCHIVE_FILES", 3)
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        for i in range(5):
+            info = tarfile.TarInfo(f"f{i}.txt")
+            tar.addfile(info, io.BytesIO(b""))
+    buf.seek(0)
+    with tarfile.open(fileobj=buf, mode="r:") as tar, pytest.raises(ToolError, match="more than 3 files"):
+        codebase._extract(tar, tmp_path)
+
+
 async def test_jenkins_refuses_jobs_outside_the_allowlist_and_bad_builds():
     from vigil_agent.gateway.tools.jenkins import JenkinsTools
 
@@ -307,3 +355,58 @@ def test_jenkins_tools_register_only_with_a_token():
 
     assert "jenkins_build_log" not in build_registry(s(jenkins_url=JENKINS)).tools
     assert {"jenkins_build_log", "jenkins_job_status"} <= set(build_registry(jenkins_settings()).tools)
+
+
+# Path traversal: a model-chosen name must not move the request to another API path.
+
+TRAVERSALS = [
+    (
+        "k8s_get",
+        lambda: KubernetesTools(s(k8s_namespace_allowlist="allowed-ns"), httpx.AsyncClient()).k8s_get(
+            "configmaps", "x/../../../kube-system/configmaps/coredns", namespace="allowed-ns"
+        ),
+    ),
+    (
+        "k8s_pod_logs",
+        lambda: KubernetesTools(s(k8s_namespace_allowlist="allowed-ns"), httpx.AsyncClient()).k8s_pod_logs(
+            "allowed-ns", "x/../../../other-ns/pods/web-0"
+        ),
+    ),
+    ("k8s_namespace", lambda: KubernetesTools(s(), httpx.AsyncClient()).k8s_events("kube-system/../x")),
+    (
+        "logs_count",
+        lambda: ElasticsearchLogs(s(), httpx.AsyncClient()).logs_count(
+            "*", index_pattern="logs-pay-x/../../logs-prod/_delete_by_query#"
+        ),
+    ),
+    (
+        "get_diff",
+        lambda: GitHubTools(s(), httpx.AsyncClient(), KubernetesTools(s(), httpx.AsyncClient()), None).get_diff(
+            "main", "main/../../../../../orgs/other-org/repos#"
+        ),
+    ),
+    ("get_issue", lambda: JiraTools(s(), httpx.AsyncClient()).get_issue("OPS-1/../SECRET-7")),
+    ("get_page", lambda: ConfluenceTools(s(), httpx.AsyncClient()).get_page("123/../456")),
+]
+
+
+@respx.mock
+@pytest.mark.parametrize("call", [c for _, c in TRAVERSALS], ids=[n for n, _ in TRAVERSALS])
+async def test_traversal_names_are_invalid_arguments(call):
+    with pytest.raises(ToolError) as err:
+        await call()
+    assert err.value.code == "invalid_arguments"
+    assert not respx.calls
+
+
+def test_valid_names_pass_the_segment_check():
+    for kind, value in [
+        ("k8s_name", "oci-cost-collector-a-29112"),
+        ("k8s_name", "web.v2"),
+        ("git_ref", "feature/x-1"),
+        ("git_ref", "0f0cb97"),
+        ("git_ref", "main~1"),
+        ("jira_key", "OPS-12"),
+        ("es_index", "logs-checkout-2026.10.21"),
+    ]:
+        assert check_segment(kind, value, "x") == value

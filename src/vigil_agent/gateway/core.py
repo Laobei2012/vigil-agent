@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -28,6 +29,44 @@ class ToolError(Exception):
     def __init__(self, code: str, message: str):
         super().__init__(message)
         self.code = code
+
+
+_DNS_LABEL = r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?"
+# Names that go into a URL path. httpx removes ".." segments and cuts the path at "?" or "#",
+# so a free-form name can move the request to another API path.
+SEGMENTS = {
+    "k8s_name": re.compile(rf"{_DNS_LABEL}(?:\.{_DNS_LABEL})*"),
+    "jira_key": re.compile(r"[A-Z][A-Z0-9_]+-\d+"),
+    "confluence_id": re.compile(r"\d{1,20}"),
+    # An Elasticsearch index name or pattern: lowercase, no "/", ",", "?", or "#".
+    "es_index": re.compile(r"[a-z0-9][a-z0-9._*-]{0,254}"),
+    "git_ref": re.compile(r"(?!.*\.\.)(?!.*//)(?![/.])[A-Za-z0-9._/~^-]{1,255}(?<![/.])"),
+}
+
+
+async def read_capped(client, method: str, url: str, limit: int, *, tail: bool = False, **kwargs):
+    """Stream a response and keep at most limit bytes: the first ones, or the last ones with tail=True.
+
+    Returns (response, body, truncated). Memory stays near limit, however large the body is.
+    """
+    async with client.stream(method, url, **kwargs) as resp:
+        body, truncated = bytearray(), False
+        async for chunk in resp.aiter_bytes():
+            body += chunk
+            if len(body) > limit:
+                truncated = True
+                if not tail:
+                    del body[limit:]
+                    break
+                del body[:-limit]
+    return resp, bytes(body), truncated
+
+
+def check_segment(kind: str, value: str, arg: str) -> str:
+    """Return value when it is a valid name of this kind, else raise invalid_arguments."""
+    if not isinstance(value, str) or len(value) > 253 or not SEGMENTS[kind].fullmatch(value):
+        raise ToolError("invalid_arguments", f"{arg} {value!r} is not a valid {kind.replace('_', ' ')}")
+    return value
 
 
 @dataclass
@@ -68,12 +107,16 @@ class Tool:
     fn: Callable[..., Awaitable[ToolOutput]]
     timeout: float | None = None
 
-    def schema(self) -> dict:
-        return {
+    def schema(self, default_timeout: float | None = None) -> dict:
+        out = {
             "name": self.name,
             "description": self.description,
             "input_schema": self.input_schema,
         }
+        # The orchestrator loop reads this and removes it before the schema goes to the model.
+        if self.timeout or default_timeout:
+            out["timeout_seconds"] = self.timeout or default_timeout
+        return out
 
 
 def load_allowlist() -> frozenset[str]:
@@ -113,7 +156,7 @@ class Registry:
         self.tools[tool.name] = tool
 
     def schemas(self) -> list[dict]:
-        return [t.schema() for t in sorted(self.tools.values(), key=lambda t: t.name)]
+        return [t.schema(self.default_timeout) for t in sorted(self.tools.values(), key=lambda t: t.name)]
 
     async def call(self, name: str, args: dict, incident_id: str | None) -> ToolResult:
         started = time.monotonic()

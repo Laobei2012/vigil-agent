@@ -33,15 +33,29 @@ class ModelClient(Protocol):
 class ClaudeModel:
     """One Messages API call with retries. The client decides where the call goes."""
 
-    def __init__(self, model_id: str, client, effort: str = "high", retries: int = 4, sleep=asyncio.sleep):
+    def __init__(
+        self,
+        model_id: str,
+        client,
+        effort: str = "high",
+        retries: int = 4,
+        sleep=asyncio.sleep,
+        cache_conversation: bool = True,
+    ):
         self.model_id = model_id
         self.client = client
         self.effort = effort
         self.retries = retries
         self.sleep = sleep
+        self.cache_conversation = cache_conversation
 
     async def create(self, *, system, tools, messages, max_tokens) -> Message:
         for attempt in range(self.retries + 1):
+            extra = {}
+            if self.cache_conversation:
+                # Automatic caching: a moving breakpoint at the end of the conversation, so each
+                # tool turn reads the earlier turns from the cache. The system breakpoint stays.
+                extra["cache_control"] = {"type": "ephemeral"}
             try:
                 return await self.client.messages.create(
                     model=self.model_id,
@@ -52,19 +66,42 @@ class ClaudeModel:
                     # Opus 5.5 always thinks; effort is the depth control.
                     thinking={"type": "adaptive"},
                     output_config={"effort": self.effort},
+                    **extra,
                 )
-            except (anthropic.RateLimitError, anthropic.InternalServerError, anthropic.APIConnectionError) as exc:
-                if isinstance(exc, anthropic.RateLimitError):
+            except anthropic.BadRequestError as exc:
+                if not (self.cache_conversation and "cache_control" in str(exc.message)):
+                    raise ModelUnavailable(f"{type(exc).__name__} 400: {exc.message}"[:500]) from exc
+                # A compatible endpoint can reject the top-level field. Go on without it.
+                log.warning("the model endpoint rejected top-level cache_control, turning it off: %s", exc.message)
+                self.cache_conversation = False
+            except (anthropic.APIConnectionError, anthropic.APIStatusError) as exc:
+                status = getattr(exc, "status_code", None)
+                # A bad key, model ID, or request does not get better with a retry. 529 (overloaded)
+                # is not an InternalServerError in the SDK, so the test is by status code.
+                if status is not None and not (status in RETRY_STATUSES or status >= 500):
+                    raise ModelUnavailable(f"{type(exc).__name__} {status}: {exc.message}"[:500]) from exc
+                if status in (429, 529):
                     telemetry.BEDROCK_THROTTLES.inc()
                 if attempt == self.retries:
                     raise ModelUnavailable(f"{type(exc).__name__}: {exc}") from exc
-                delay = 2 ** (attempt + 1)
-                log.warning("model call failed (%s), retry in %ss", type(exc).__name__, delay)
+                delay = _retry_after(exc) or 2 ** (attempt + 1)
+                log.warning("model call failed (%s %s), retry in %ss", type(exc).__name__, status, delay)
                 await self.sleep(delay)
-            except anthropic.APIStatusError as exc:
-                # A bad key, model ID, or request does not get better with a retry.
-                raise ModelUnavailable(f"{type(exc).__name__} {exc.status_code}: {exc.message}"[:500]) from exc
         raise ModelUnavailable("unreachable")
+
+
+RETRY_STATUSES = (408, 409, 429)
+MAX_RETRY_AFTER = 60.0
+
+
+def _retry_after(exc: Exception) -> float | None:
+    """The retry-after header in seconds, capped at MAX_RETRY_AFTER, or None."""
+    response = getattr(exc, "response", None)
+    try:
+        value = float(response.headers.get("retry-after"))
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return min(max(value, 0.0), MAX_RETRY_AFTER)
 
 
 class BedrockModel(ClaudeModel):
@@ -87,10 +124,13 @@ class AnthropicModel(ClaudeModel):
 
 def build_model(settings) -> ClaudeModel:
     if settings.model_provider == "anthropic":
-        return AnthropicModel(settings.model_id, settings.model_effort)
-    if settings.model_provider == "bedrock":
-        return BedrockModel(settings.model_id, settings.bedrock_region, settings.model_effort)
-    raise ValueError(f"unknown model provider {settings.model_provider!r}, use bedrock or anthropic")
+        model = AnthropicModel(settings.model_id, settings.model_effort)
+    elif settings.model_provider == "bedrock":
+        model = BedrockModel(settings.model_id, settings.bedrock_region, settings.model_effort)
+    else:
+        raise ValueError(f"unknown model provider {settings.model_provider!r}, use bedrock or anthropic")
+    model.cache_conversation = settings.model_cache_conversation
+    return model
 
 
 def with_cache_points(system_text: str, tools: list[dict]) -> tuple[list[dict], list[dict]]:

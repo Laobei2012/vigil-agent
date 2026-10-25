@@ -1,16 +1,18 @@
 import json
+import re
 
 import pytest
 from slack_sdk.errors import SlackApiError
 from slack_sdk.web.async_slack_response import AsyncSlackResponse
 
 from vigil_agent.agent.report import Hypothesis, Mitigation, Report
-from vigil_agent.slack.client import SlackClient, post_blocks
+from vigil_agent.slack.client import RedactingSlack, SlackClient, post_blocks
 from vigil_agent.slack.render import (
     BLOCKS_PER_MESSAGE,
     SECTION_LIMIT,
     SUGGESTED,
     evidence_only_blocks,
+    parent_blocks,
     report_blocks,
     sanitize,
     split_messages,
@@ -192,6 +194,31 @@ async def test_channel_id_is_kept_for_updates():
     assert client.channel_ids == {"#alertmanager": "C123"}
 
 
+async def test_redacting_slack_masks_text_and_blocks_and_keeps_channel_ids():
+    class Inner:
+        channel_ids = {"#c": "C1"}
+
+        def __init__(self):
+            self.sent = []
+
+        async def post(self, channel, text, blocks=None, thread_ts=None):
+            self.sent.append((text, blocks))
+            return "1.0"
+
+        async def update(self, channel, ts, text, blocks=None):
+            self.sent.append((text, blocks))
+
+    inner = Inner()
+    slack = RedactingSlack(inner)
+    block = {"type": "section", "text": {"type": "mrkdwn", "text": "DB_PASSWORD=hunter2fake"}}
+    await slack.post("#c", "token=abcdefabcdefabcdef", [block])
+    await slack.update("#c", "1.0", "password: correct-horse-battery", None)
+    assert "hunter2fake" not in json.dumps(inner.sent)
+    assert "abcdefabcdefabcdef" not in json.dumps(inner.sent)
+    assert "correct-horse-battery" not in json.dumps(inner.sent)
+    assert slack.channel_ids == {"#c": "C1"}
+
+
 def test_evidence_only_reply_shows_the_failed_build():
     prefetch = {
         "jenkins": {
@@ -205,3 +232,66 @@ def test_evidence_only_reply_shows_the_failed_build():
     }
     text = json.dumps(evidence_only_blocks(prefetch, {}, allowed=ALLOWED, reason="r", footer="f"))
     assert "tts #42 FAILURE on win10-gpu" in text and "line 3" in text and "NAS share not found" in text
+
+
+HOSTILE = "<!channel> <@U0BOSS> <mailto:boss@evil.example|incident commander> <slack://open?team=T1|open>"
+HOSTILE += " <HTTPS://evil.example/x|grafana> <https://evil.example\\@monitoring.oci.liwenxin.com/d|dash>"
+
+
+def _made_links_only(texts: list[str]) -> None:
+    """Every "<" must open a link that render built: https, no user information, no backslash."""
+    for t in texts:
+        assert "<!" not in t and "<@" not in t, t
+        for m in re.finditer(r"<[^>]*>?", t):
+            assert re.fullmatch(r"<https://[^|>\s\\@]+\|[^<>]*>", m.group(0)), m.group(0)
+
+
+def _texts(blocks: list[dict]) -> list[str]:
+    out = []
+    for b in blocks:
+        if isinstance(b.get("text"), dict):
+            out.append(b["text"]["text"])
+        for e in b.get("elements", []):
+            if isinstance(e.get("text"), str):
+                out.append(e["text"])
+    return out
+
+
+def test_hostile_fields_cannot_mention_or_link():
+    evidence = {
+        "E1": {"url": "https://monitoring.oci.liwenxin.com/explore", "title": f'search_logs {{"query": "{HOSTILE}"}}'},
+        "E2": {"url": "https://github.com/o/r/search?q=x><!channel><|E2", "title": "grep_code"},
+        "E3": {"url": "https://evil.example\\@monitoring.oci.liwenxin.com/d", "title": "x"},
+    }
+    mitigation = Mitigation(
+        action="restart", risk="low", expected_effect=HOSTILE, command="kubectl get pods\n<!channel> x"
+    )
+    r = report(summary=HOSTILE, mitigations=[mitigation])
+    blocks = report_blocks(r, evidence, allowed=ALLOWED, footer="f", label="First pass", investigation_id=1)
+    _made_links_only(_texts(blocks))
+    alerts = [{"labels": {"alertname": HOSTILE, "namespace": "<!here>"}, "annotations": {"description": HOSTILE}}]
+    prefetch = {
+        "alert_rule": {"name": HOSTILE, "query": HOSTILE, "duration": 60},
+        "metrics": [{"evidence_id": "E1", "query": HOSTILE, "series": [{"metric": {"pod": HOSTILE}, "max": 1}]}],
+        "jenkins": {"evidence_id": "E1", "job": HOSTILE, "build": 1, "result": "<!here>", "agent": HOSTILE},
+    }
+    eo = evidence_only_blocks(prefetch, evidence, allowed=ALLOWED, reason=HOSTILE, footer="f", alerts=alerts)
+    _made_links_only(_texts(eo))
+    text, parent = parent_blocks(
+        severity="high",
+        service=HOSTILE,
+        cluster="c",
+        title=HOSTILE,
+        pd_url="https://evil.example/x",
+        status="new",
+        verdict=HOSTILE,
+        allowed=ALLOWED,
+    )
+    _made_links_only([text, *_texts(parent)])
+    assert "evil.example/x|incident" not in json.dumps(parent)
+
+
+def test_commands_render_in_a_fence_that_the_text_cannot_close():
+    r = report(mitigations=[Mitigation(action="a", risk="low", expected_effect="e", command="ls ```\n<!channel>")])
+    text = "\n".join(_texts(report_blocks(r, {}, allowed=ALLOWED, footer="f", label="l", investigation_id=1)))
+    assert "```\nls '''\n&lt;!channel&gt;\n```" in text

@@ -19,6 +19,9 @@ _READ_SUBVERBS = {("kubectl", "rollout"): {"status", "history"}, ("kubectl", "au
 _FILTERS = {"grep", "egrep", "head", "tail", "wc", "jq", "sort", "uniq", "cut", "less", "base64"}
 # Scaling a workload to zero stops it. The prompts call it high risk, and the report enforces that.
 _SCALE_TO_ZERO = re.compile(r"--replicas[= ]0\b|\bscale\b.{0,40}\bto (0|zero)\b", re.I)
+# Commands that remove or rewrite things. The model's risk label cannot make them low risk.
+# Scaling up stays as the model rated it; scaling to zero is _SCALE_TO_ZERO.
+_DESTRUCTIVE = re.compile(r"\b(?:delete|drain|uninstall|patch|suspend)\b|--force\b|\brm\s+-\w*(?:rf|fr)", re.I)
 # Flags that take the next word as their value.
 _VALUE_FLAGS = {"-n", "--namespace", "--context", "-l", "--selector", "-C", "-c", "--container", "-o", "--output"}
 
@@ -120,9 +123,25 @@ class Report(BaseModel):
         """
         self.mitigations.sort(key=lambda m: read_only_command(m.command))
         for m in self.mitigations:
-            if _SCALE_TO_ZERO.search(f"{m.action} {m.command or ''}"):
+            if _SCALE_TO_ZERO.search(f"{m.action} {m.command or ''}") or _DESTRUCTIVE.search(m.command or ""):
                 m.risk = "high"
         return self
+
+
+def flag_quoted_commands(report: Report, inputs: list[str]) -> None:
+    """Mark a command that the model copied word for word from the alert or a tool result.
+
+    Text in those inputs can come from an attacker, so a copied command is probably injected.
+    """
+    seen = " ".join(" ".join(inputs).split())
+    for i, m in enumerate(report.mitigations, 1):
+        command = " ".join((m.command or "").split())
+        if len(command) >= 12 and command in seen:
+            m.risk = "high"
+            report.gaps.append(
+                f"Mitigation {i} repeats a command from the alert or a tool result word for word. "
+                "Someone can plant such a command, so make sure that it is safe before you run it."
+            )
 
 
 SUBMIT_REPORT_TOOL = {

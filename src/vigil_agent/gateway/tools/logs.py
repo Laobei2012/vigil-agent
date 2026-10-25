@@ -13,7 +13,7 @@ from urllib.parse import quote
 
 import httpx
 
-from vigil_agent.gateway.core import Tool, ToolError, ToolOutput
+from vigil_agent.gateway.core import Tool, ToolError, ToolOutput, check_segment
 from vigil_agent.gateway.settings import GatewaySettings
 from vigil_agent.gateway.tools.metrics import explore_url
 from vigil_agent.timeutil import iso, parse_time
@@ -160,6 +160,8 @@ class ElasticsearchLogs:
     def _index(self, index_pattern: str | None) -> str:
         if not index_pattern:
             raise ToolError("invalid_arguments", "index_pattern is required")
+        # fnmatch lets "*" match "/", "?", and "#", so the name must also be a plain index name.
+        check_segment("es_index", index_pattern, "index_pattern")
         if not any(fnmatch.fnmatch(index_pattern, allowed) for allowed in self.s.es_indices):
             raise ToolError("invalid_arguments", f"index {index_pattern} is not in the allowlist")
         return index_pattern
